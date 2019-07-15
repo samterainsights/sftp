@@ -3,6 +3,7 @@ package sftp
 import (
 	"context"
 	"io"
+	"os"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -14,18 +15,37 @@ import (
 
 var maxTxPacket uint32 = 1 << 15
 
-// Handlers contains the 4 SFTP server request handlers.
-type Handlers struct {
-	FileGet  FileReader
-	FilePut  FileWriter
-	FileCmd  FileCmder
-	FileList FileLister
+// ListerAt does for file lists what io.ReaderAt does for files.
+// ListAt should return the number of entries copied and an io.EOF
+// error if at end of list. This is testable by comparing how many you
+// copied to how many could be copied (eg. n < len(ls) below).
+// The copy() builtin is best for the copying.
+// Note in cases of an error, the error text will be sent to the client.
+type ListerAt interface {
+	ListAt([]os.FileInfo, int64) (int, error)
+}
+
+// RequestHandler is responsible for handling the various kinds of SFTP requests.
+// Two implementations are provided by this library: an in-memory filesystem and
+// a wrapper around the OS filesystem.
+type RequestHandler interface {
+	Get(*Request) (io.ReaderAt, error)
+	OpenFile(*Request) (io.WriterAt, error)
+	List(*Request) (ListerAt, error)
+	Stat(*Request) (os.FileInfo, error)
+	ReadLink(*Request) (os.FileInfo, error)
+	Setstat(*Request) error
+	Rename(*Request) error
+	Rmdir(*Request) error
+	Mkdir(*Request) error
+	Symlink(*Request) error
+	Remove(*Request) error
 }
 
 // RequestServer abstracts the sftp protocol with an http request-like protocol
 type RequestServer struct {
 	*serverConn
-	Handlers        Handlers
+	Handlers        RequestHandler
 	pktMgr          *packetManager
 	openRequests    map[string]*Request
 	openRequestLock sync.RWMutex
@@ -34,13 +54,11 @@ type RequestServer struct {
 
 // NewRequestServer creates/allocates/returns new RequestServer.
 // Normally there there will be one server per user-session.
-func NewRequestServer(rwc io.ReadWriteCloser, h Handlers) *RequestServer {
-	svrConn := &serverConn{
-		conn: conn{
-			Reader:      rwc,
-			WriteCloser: rwc,
-		},
-	}
+func NewRequestServer(rwc io.ReadWriteCloser, h RequestHandler) *RequestServer {
+	svrConn := &serverConn{conn{
+		Reader:      rwc,
+		WriteCloser: rwc,
+	}}
 	return &RequestServer{
 		serverConn:   svrConn,
 		Handlers:     h,
