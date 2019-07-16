@@ -6,17 +6,17 @@ import (
 	"sync"
 )
 
-// The goal of the packetManager is to keep the outgoing packets in the same
-// order as the incoming as is requires by section 7 of the RFC.
+// packetManager ensures outgoing packets are in the same order as the incoming
+// per section 7 of the RFC.
 type packetManager struct {
-	requests    chan orderedPacket
-	responses   chan orderedPacket
-	fini        chan struct{}
-	incoming    orderedPackets
-	outgoing    orderedPackets
-	sender      packetSender // connection object
-	working     *sync.WaitGroup
-	packetCount uint32
+	requests  chan orderedPacket
+	responses chan orderedPacket
+	fini      chan struct{}
+	incoming  orderedPackets
+	outgoing  orderedPackets
+	sender    packetSender // connection object
+	working   *sync.WaitGroup
+	counter   uint32
 }
 
 type packetSender interface {
@@ -39,8 +39,8 @@ func newPktMgr(sender packetSender) *packetManager {
 
 //// packet ordering
 func (s *packetManager) newOrderID() uint32 {
-	s.packetCount++
-	return s.packetCount
+	s.counter++
+	return s.counter
 }
 
 type orderedRequest struct {
@@ -185,18 +185,3 @@ func (s *packetManager) maybeSendPackets() {
 		}
 	}
 }
-
-// func oids(o []orderedPacket) []uint32 {
-// 	res := make([]uint32, 0, len(o))
-// 	for _, v := range o {
-// 		res = append(res, v.orderID())
-// 	}
-// 	return res
-// }
-// func ids(o []orderedPacket) []uint32 {
-// 	res := make([]uint32, 0, len(o))
-// 	for _, v := range o {
-// 		res = append(res, v.id())
-// 	}
-// 	return res
-// }

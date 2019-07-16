@@ -19,7 +19,7 @@ type conn struct {
 }
 
 func (c *conn) recvPacket() (uint8, []byte, error) {
-	return recvPacket(c)
+	return readPacket(c)
 }
 
 func (c *conn) sendPacket(m encoding.BinaryMarshaler) error {
@@ -28,7 +28,7 @@ func (c *conn) sendPacket(m encoding.BinaryMarshaler) error {
 	if c.sendPacketTest != nil {
 		return c.sendPacketTest(c, m)
 	}
-	return sendPacket(c, m)
+	return writePacket(c, m)
 }
 
 type clientConn struct {

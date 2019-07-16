@@ -17,13 +17,6 @@ var (
 	errUnknownExtendedPacket = errors.New("unknown extended packet")
 )
 
-const (
-	debugDumpTxPacket      = false
-	debugDumpRxPacket      = false
-	debugDumpTxPacketBytes = false
-	debugDumpRxPacketBytes = false
-)
-
 func marshalUint32(b []byte, v uint32) []byte {
 	return append(b, byte(v>>24), byte(v>>16), byte(v>>8), byte(v))
 }
@@ -114,45 +107,45 @@ func unmarshalStringSafe(b []byte) (string, []byte, error) {
 	return string(b[:n]), b[n:], nil
 }
 
-// sendPacket marshals p according to RFC 4234.
-func sendPacket(w io.Writer, m encoding.BinaryMarshaler) error {
-	bb, err := m.MarshalBinary()
+// writePacket marshals a packet and then write the length and data to a
+// destination.
+//
+// TODO(samterainsights): implement a common interface on every packet type
+// to speed things up because most packets know their exact length or can
+// compute it with fewer copies so they should just write themself directly.
+func writePacket(w io.Writer, m encoding.BinaryMarshaler) error {
+	b, err := m.MarshalBinary()
 	if err != nil {
-		return errors.Errorf("binary marshaller failed: %v", err)
+		return errors.Wrap(err, "error marshalling packet")
 	}
-	if debugDumpTxPacketBytes {
-		debug("send packet: %s %d bytes %x", fxp(bb[0]), len(bb), bb[1:])
-	} else if debugDumpTxPacket {
-		debug("send packet: %s %d bytes", fxp(bb[0]), len(bb))
-	}
-	// Slide packet down 4 bytes to make room for length header.
-	packet := append(bb, make([]byte, 4)...) // optimistically assume bb has capacity
-	copy(packet[4:], bb)
-	binary.BigEndian.PutUint32(packet[:4], uint32(len(bb)))
+	debug("writePacket [type=%s]: %x", fxp(b[0]), b[1:])
 
-	_, err = w.Write(packet)
-	if err != nil {
-		return errors.Errorf("failed to send packet: %v", err)
+	// Slide packet down 4 bytes to make room for length header.
+	l := uint32(len(b))
+	b = append(b, 0, 0, 0, 0) // optimistically assume bb has capacity
+	copy(b[4:], b)
+	binary.BigEndian.PutUint32(b[:4], l)
+
+	if _, err = w.Write(b); err != nil {
+		return errors.Wrap(err, "error writing packet")
 	}
 	return nil
 }
 
-func recvPacket(r io.Reader) (uint8, []byte, error) {
-	var b = []byte{0, 0, 0, 0}
+// readPacket reads a single SFTP packet and returns the raw type and
+// data. The data will need to be interpreted depending on the type.
+func readPacket(r io.Reader) (uint8, []byte, error) {
+	b := make([]byte, 4)
 	if _, err := io.ReadFull(r, b); err != nil {
 		return 0, nil, err
 	}
-	l, _ := unmarshalUint32(b)
-	b = make([]byte, l)
+	pktLen := binary.BigEndian.Uint32(b)
+	b = make([]byte, pktLen)
 	if _, err := io.ReadFull(r, b); err != nil {
-		debug("recv packet %d bytes: err %v", l, err)
+		debug("readPacket [length=%d]: error: %v", pktLen, err)
 		return 0, nil, err
 	}
-	if debugDumpRxPacketBytes {
-		debug("recv packet: %s %d bytes %x", fxp(b[0]), l, b[1:])
-	} else if debugDumpRxPacket {
-		debug("recv packet: %s %d bytes", fxp(b[0]), l)
-	}
+	debug("readPacket [type=%s]: %x", fxp(b[0]), b[1:])
 	return b[0], b[1:], nil
 }
 
