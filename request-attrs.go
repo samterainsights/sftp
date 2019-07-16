@@ -5,8 +5,8 @@ package sftp
 // request and AttrFlags() and Attributes() when working with SetStat requests.
 import "os"
 
-// File Open and Write Flags. Correlate directly with with os.OpenFile flags
-// (https://golang.org/pkg/os/#pkg-constants).
+// FileOpenFlags is the result of unpacking the `pflags` bitfield from an
+// SSH_FXP_OPEN request.
 type FileOpenFlags struct {
 	Read, Write, Append, Creat, Trunc, Excl bool
 }
@@ -32,20 +32,20 @@ func (r *Request) Pflags() FileOpenFlags {
 // true the corresponding attribute should be available from the FileStat
 // object returned by Attributes method. Used with SetStat.
 type FileAttrFlags struct {
-	Size, UidGid, Permissions, Acmodtime bool
+	Size, UIDGID, Permissions, Acmodtime bool
 }
 
 func newFileAttrFlags(flags uint32) FileAttrFlags {
 	return FileAttrFlags{
 		Size:        (flags & ssh_FILEXFER_ATTR_SIZE) != 0,
-		UidGid:      (flags & ssh_FILEXFER_ATTR_UIDGID) != 0,
+		UIDGID:      (flags & ssh_FILEXFER_ATTR_UIDGID) != 0,
 		Permissions: (flags & ssh_FILEXFER_ATTR_PERMISSIONS) != 0,
 		Acmodtime:   (flags & ssh_FILEXFER_ATTR_ACMODTIME) != 0,
 	}
 }
 
-// FileAttrFlags returns a FileAttrFlags boolean struct based on the
-// bitmap/uint32 file attribute flags from the SFTP packaet.
+// AttrFlags returns a FileAttrFlags boolean struct based on the bitmap/uint32 file
+// attribute flags from the SFTP packaet.
 func (r *Request) AttrFlags() FileAttrFlags {
 	return newFileAttrFlags(r.Flags)
 }

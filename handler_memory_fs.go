@@ -16,16 +16,17 @@ import (
 	"time"
 )
 
-// InMemHandler returns a Hanlders object with the test handlers.
-func InMemHandler() RequestHandler {
+// MemFS creates a new in-memory filesystem which can serve as the backend for
+// a Server. Plan is to expose the underlying struct in the future so user code
+// can actually extract files the client has uploaded and do stuff with them.
+func MemFS() RequestHandler {
 	return &root{
 		memFile: newMemFile("/", true),
 		files:   make(map[string]*memFile),
 	}
 }
 
-// Example Handlers
-func (fs *root) Fileread(r *Request) (io.ReaderAt, error) {
+func (fs *root) Get(r *Request) (io.ReaderAt, error) {
 	if fs.mockErr != nil {
 		return nil, fs.mockErr
 	}
@@ -45,7 +46,7 @@ func (fs *root) Fileread(r *Request) (io.ReaderAt, error) {
 	return file.ReaderAt()
 }
 
-func (fs *root) Filewrite(r *Request) (io.WriterAt, error) {
+func (fs *root) OpenFile(r *Request) (io.WriterAt, error) {
 	if fs.mockErr != nil {
 		return nil, fs.mockErr
 	}
@@ -67,49 +68,101 @@ func (fs *root) Filewrite(r *Request) (io.WriterAt, error) {
 	return file.WriterAt()
 }
 
-func (fs *root) Filecmd(r *Request) error {
+func (fs *root) Setstat(r *Request) error {
+	// No-op, just return the mock error for testing (might be nil)
+	return fs.mockErr
+}
+
+func (fs *root) Rename(r *Request) error {
 	if fs.mockErr != nil {
 		return fs.mockErr
 	}
 	_ = r.WithContext(r.Context()) // initialize context for deadlock testing
 	fs.filesLock.Lock()
 	defer fs.filesLock.Unlock()
-	switch r.Method {
-	case "Setstat":
-		return nil
-	case "Rename":
-		file, err := fs.fetch(r.Filepath)
-		if err != nil {
-			return err
-		}
-		if _, ok := fs.files[r.Target]; ok {
-			return &os.LinkError{Op: "rename", Old: r.Filepath, New: r.Target,
-				Err: fmt.Errorf("dest file exists")}
-		}
-		file.name = r.Target
-		fs.files[r.Target] = file
-		delete(fs.files, r.Filepath)
-	case "Rmdir", "Remove":
-		_, err := fs.fetch(filepath.Dir(r.Filepath))
-		if err != nil {
-			return err
-		}
-		delete(fs.files, r.Filepath)
-	case "Mkdir":
-		_, err := fs.fetch(filepath.Dir(r.Filepath))
-		if err != nil {
-			return err
-		}
-		fs.files[r.Filepath] = newMemFile(r.Filepath, true)
-	case "Symlink":
-		_, err := fs.fetch(r.Filepath)
-		if err != nil {
-			return err
-		}
-		link := newMemFile(r.Target, false)
-		link.symlink = r.Filepath
-		fs.files[r.Target] = link
+
+	file, err := fs.fetch(r.Filepath)
+	if err != nil {
+		return err
 	}
+	if _, ok := fs.files[r.Target]; ok {
+		return &os.LinkError{Op: "rename", Old: r.Filepath, New: r.Target,
+			Err: fmt.Errorf("dest file exists")}
+	}
+	file.name = r.Target
+	fs.files[r.Target] = file
+	delete(fs.files, r.Filepath)
+
+	return nil
+}
+
+func (fs *root) Rmdir(r *Request) error {
+	if fs.mockErr != nil {
+		return fs.mockErr
+	}
+	_ = r.WithContext(r.Context()) // initialize context for deadlock testing
+	fs.filesLock.Lock()
+	defer fs.filesLock.Unlock()
+
+	_, err := fs.fetch(filepath.Dir(r.Filepath))
+	if err != nil {
+		return err
+	}
+	delete(fs.files, r.Filepath)
+
+	return nil
+}
+
+func (fs *root) Mkdir(r *Request) error {
+	if fs.mockErr != nil {
+		return fs.mockErr
+	}
+	_ = r.WithContext(r.Context()) // initialize context for deadlock testing
+	fs.filesLock.Lock()
+	defer fs.filesLock.Unlock()
+
+	_, err := fs.fetch(filepath.Dir(r.Filepath))
+	if err != nil {
+		return err
+	}
+	fs.files[r.Filepath] = newMemFile(r.Filepath, true)
+
+	return nil
+}
+
+func (fs *root) Symlink(r *Request) error {
+	if fs.mockErr != nil {
+		return fs.mockErr
+	}
+	_ = r.WithContext(r.Context()) // initialize context for deadlock testing
+	fs.filesLock.Lock()
+	defer fs.filesLock.Unlock()
+
+	_, err := fs.fetch(r.Filepath)
+	if err != nil {
+		return err
+	}
+	link := newMemFile(r.Target, false)
+	link.symlink = r.Filepath
+	fs.files[r.Target] = link
+
+	return nil
+}
+
+func (fs *root) Remove(r *Request) error {
+	if fs.mockErr != nil {
+		return fs.mockErr
+	}
+	_ = r.WithContext(r.Context()) // initialize context for deadlock testing
+	fs.filesLock.Lock()
+	defer fs.filesLock.Unlock()
+
+	_, err := fs.fetch(filepath.Dir(r.Filepath))
+	if err != nil {
+		return err
+	}
+	delete(fs.files, r.Filepath)
+
 	return nil
 }
 
@@ -128,7 +181,7 @@ func (f listerat) ListAt(ls []os.FileInfo, offset int64) (int, error) {
 	return n, nil
 }
 
-func (fs *root) Filelist(r *Request) (ListerAt, error) {
+func (fs *root) List(r *Request) (ListerAt, error) {
 	if fs.mockErr != nil {
 		return nil, fs.mockErr
 	}
@@ -140,36 +193,51 @@ func (fs *root) Filelist(r *Request) (ListerAt, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	switch r.Method {
-	case "List":
-		if !file.IsDir() {
-			return nil, syscall.ENOTDIR
-		}
-		orderedNames := []string{}
-		for fn := range fs.files {
-			if filepath.Dir(fn) == r.Filepath {
-				orderedNames = append(orderedNames, fn)
-			}
-		}
-		sort.Strings(orderedNames)
-		list := make([]os.FileInfo, len(orderedNames))
-		for i, fn := range orderedNames {
-			list[i] = fs.files[fn]
-		}
-		return listerat(list), nil
-	case "Stat":
-		return listerat([]os.FileInfo{file}), nil
-	case "Readlink":
-		if file.symlink != "" {
-			file, err = fs.fetch(file.symlink)
-			if err != nil {
-				return nil, err
-			}
-		}
-		return listerat([]os.FileInfo{file}), nil
+	if !file.IsDir() {
+		return nil, syscall.ENOTDIR
 	}
-	return nil, nil
+	orderedNames := []string{}
+	for fn := range fs.files {
+		if filepath.Dir(fn) == r.Filepath {
+			orderedNames = append(orderedNames, fn)
+		}
+	}
+	sort.Strings(orderedNames)
+	list := make([]os.FileInfo, len(orderedNames))
+	for i, fn := range orderedNames {
+		list[i] = fs.files[fn]
+	}
+	return listerat(list), nil
+}
+
+func (fs *root) Stat(r *Request) (os.FileInfo, error) {
+	if fs.mockErr != nil {
+		return nil, fs.mockErr
+	}
+	_ = r.WithContext(r.Context()) // initialize context for deadlock testing
+	fs.filesLock.Lock()
+	defer fs.filesLock.Unlock()
+
+	return fs.fetch(r.Filepath)
+}
+
+func (fs *root) ReadLink(r *Request) (os.FileInfo, error) {
+	if fs.mockErr != nil {
+		return nil, fs.mockErr
+	}
+
+	_ = r.WithContext(r.Context()) // initialize context for deadlock testing
+	fs.filesLock.Lock()
+	defer fs.filesLock.Unlock()
+
+	file, err := fs.fetch(r.Filepath)
+	if err != nil {
+		return nil, err
+	}
+	if file.symlink != "" {
+		return fs.fetch(file.symlink)
+	}
+	return file, nil
 }
 
 // In memory file-system-y thing that the Hanlders live on
@@ -249,6 +317,7 @@ func (f *memFile) WriterAt() (io.WriterAt, error) {
 	}
 	return f, nil
 }
+
 func (f *memFile) WriteAt(p []byte, off int64) (int, error) {
 	// fmt.Println(string(p), off)
 	// mimic write delays, should be optional

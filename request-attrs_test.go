@@ -22,7 +22,7 @@ func TestRequestAflags(t *testing.T) {
 	aflags := newFileAttrFlags(
 		ssh_FILEXFER_ATTR_SIZE | ssh_FILEXFER_ATTR_UIDGID)
 	assert.True(t, aflags.Size)
-	assert.True(t, aflags.UidGid)
+	assert.True(t, aflags.UIDGID)
 	assert.False(t, aflags.Acmodtime)
 	assert.False(t, aflags.Permissions)
 }
@@ -34,18 +34,18 @@ func TestRequestAttributes(t *testing.T) {
 	at := []byte{}
 	at = marshalUint32(at, 1)
 	at = marshalUint32(at, 2)
-	test_fs, _ := getFileStat(fl, at)
-	assert.Equal(t, fa, *test_fs)
+	testFS, _ := getFileStat(fl, at)
+	assert.Equal(t, fa, *testFS)
 	// Size and Mode
 	fa = FileStat{Mode: 700, Size: 99}
 	fl = uint32(ssh_FILEXFER_ATTR_SIZE | ssh_FILEXFER_ATTR_PERMISSIONS)
 	at = []byte{}
 	at = marshalUint64(at, 99)
 	at = marshalUint32(at, 700)
-	test_fs, _ = getFileStat(fl, at)
-	assert.Equal(t, fa, *test_fs)
+	testFS, _ = getFileStat(fl, at)
+	assert.Equal(t, fa, *testFS)
 	// FileMode
-	assert.True(t, test_fs.FileMode().IsRegular())
-	assert.False(t, test_fs.FileMode().IsDir())
-	assert.Equal(t, test_fs.FileMode().Perm(), os.FileMode(700).Perm())
+	assert.True(t, testFS.FileMode().IsRegular())
+	assert.False(t, testFS.FileMode().IsDir())
+	assert.Equal(t, testFS.FileMode().Perm(), os.FileMode(700).Perm())
 }

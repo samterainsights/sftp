@@ -265,7 +265,7 @@ func TestStatusFromError(t *testing.T) {
 			StatusError: StatusError{Code: code},
 		}
 	}
-	test_cases := []test{
+	testCases := []test{
 		test{syscall.ENOENT, tpkt(1, ssh_FX_NO_SUCH_FILE)},
 		test{&os.PathError{Err: syscall.ENOENT},
 			tpkt(2, ssh_FX_NO_SUCH_FILE)},
@@ -275,7 +275,7 @@ func TestStatusFromError(t *testing.T) {
 		test{io.EOF, tpkt(6, ssh_FX_EOF)},
 		test{os.ErrNotExist, tpkt(7, ssh_FX_NO_SUCH_FILE)},
 	}
-	for _, tc := range test_cases {
+	for _, tc := range testCases {
 		tc.pkt.StatusError.msg = tc.err.Error()
 		assert.Equal(t, tc.pkt, statusFromError(tc.pkt, tc.err))
 	}

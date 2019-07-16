@@ -71,8 +71,8 @@ var sftpServerDebugStream = ioutil.Discard
 var sftpClientDebugStream = ioutil.Discard
 
 const (
-	GOLANG_SFTP  = true
-	OPENSSH_SFTP = false
+	golangSFTP  = true
+	openSSHSFTP = false
 )
 
 var (
@@ -468,8 +468,8 @@ func runSftpClient(t *testing.T, script string, path string, host string, port i
 }
 
 func TestServerCompareSubsystems(t *testing.T) {
-	listenerGo, hostGo, portGo := testServer(t, GOLANG_SFTP, READONLY)
-	listenerOp, hostOp, portOp := testServer(t, OPENSSH_SFTP, READONLY)
+	listenerGo, hostGo, portGo := testServer(t, golangSFTP, READONLY)
+	listenerOp, hostOp, portOp := testServer(t, openSSHSFTP, READONLY)
 	defer listenerGo.Close()
 	defer listenerOp.Close()
 
@@ -543,7 +543,7 @@ func randName() string {
 }
 
 func TestServerMkdirRmdir(t *testing.T) {
-	listenerGo, hostGo, portGo := testServer(t, GOLANG_SFTP, READONLY)
+	listenerGo, hostGo, portGo := testServer(t, golangSFTP, READONLY)
 	defer listenerGo.Close()
 
 	tmpDir := "/tmp/" + randName()
@@ -571,7 +571,7 @@ func TestServerMkdirRmdir(t *testing.T) {
 
 func TestServerSymlink(t *testing.T) {
 	skipIfWindows(t) // No symlinks on windows.
-	listenerGo, hostGo, portGo := testServer(t, GOLANG_SFTP, READONLY)
+	listenerGo, hostGo, portGo := testServer(t, golangSFTP, READONLY)
 	defer listenerGo.Close()
 
 	link := "/tmp/" + randName()
@@ -591,7 +591,7 @@ func TestServerSymlink(t *testing.T) {
 }
 
 func TestServerPut(t *testing.T) {
-	listenerGo, hostGo, portGo := testServer(t, GOLANG_SFTP, READONLY)
+	listenerGo, hostGo, portGo := testServer(t, golangSFTP, READONLY)
 	defer listenerGo.Close()
 
 	tmpFileLocal := "/tmp/" + randName()
@@ -621,7 +621,7 @@ func TestServerPut(t *testing.T) {
 }
 
 func TestServerGet(t *testing.T) {
-	listenerGo, hostGo, portGo := testServer(t, GOLANG_SFTP, READONLY)
+	listenerGo, hostGo, portGo := testServer(t, golangSFTP, READONLY)
 	defer listenerGo.Close()
 
 	tmpFileLocal := "/tmp/" + randName()
@@ -717,7 +717,7 @@ func compareDirectoriesRecursive(t *testing.T, aroot, broot string) {
 }
 
 func TestServerPutRecursive(t *testing.T) {
-	listenerGo, hostGo, portGo := testServer(t, GOLANG_SFTP, READONLY)
+	listenerGo, hostGo, portGo := testServer(t, golangSFTP, READONLY)
 	defer listenerGo.Close()
 
 	dirLocal, err := os.Getwd()
@@ -738,7 +738,7 @@ func TestServerPutRecursive(t *testing.T) {
 }
 
 func TestServerGetRecursive(t *testing.T) {
-	listenerGo, hostGo, portGo := testServer(t, GOLANG_SFTP, READONLY)
+	listenerGo, hostGo, portGo := testServer(t, golangSFTP, READONLY)
 	defer listenerGo.Close()
 
 	dirRemote, err := os.Getwd()
