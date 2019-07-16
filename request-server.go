@@ -209,7 +209,7 @@ func (rs *RequestServer) packetWorker(
 		}
 
 		rs.pktMgr.readyPacket(
-			rs.pktMgr.newOrderedResponse(rpkt, pkt.orderId()))
+			rs.pktMgr.newOrderedResponse(rpkt, pkt.orderID()))
 	}
 	return nil
 }

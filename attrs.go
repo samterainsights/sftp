@@ -10,11 +10,12 @@ import (
 )
 
 const (
-	ssh_FILEXFER_ATTR_SIZE        = 0x00000001
-	ssh_FILEXFER_ATTR_UIDGID      = 0x00000002
-	ssh_FILEXFER_ATTR_PERMISSIONS = 0x00000004
-	ssh_FILEXFER_ATTR_ACMODTIME   = 0x00000008
-	ssh_FILEXFER_ATTR_EXTENDED    = 0x80000000
+	sftpAttrFlagSize uint32 = 1 << iota
+	sftpAttrFlagUIDGID
+	sftpAttrFlagPermissions
+	sftpAttrFlagAcModTime
+	// -- room left in protocol for more flag bits --
+	sftpAttrFlagExtended uint32 = 1 << 31
 )
 
 // fileInfo is an artificial type designed to satisfy os.FileInfo.
@@ -26,22 +27,12 @@ type fileInfo struct {
 	sys   interface{}
 }
 
-// Name returns the base name of the file.
-func (fi *fileInfo) Name() string { return fi.name }
-
-// Size returns the length in bytes for regular files; system-dependent for others.
-func (fi *fileInfo) Size() int64 { return fi.size }
-
-// Mode returns file mode bits.
-func (fi *fileInfo) Mode() os.FileMode { return fi.mode }
-
-// ModTime returns the last modification time of the file.
+func (fi *fileInfo) Name() string       { return fi.name }
+func (fi *fileInfo) Size() int64        { return fi.size }
+func (fi *fileInfo) Mode() os.FileMode  { return fi.mode }
 func (fi *fileInfo) ModTime() time.Time { return fi.mtime }
-
-// IsDir returns true if the file is a directory.
-func (fi *fileInfo) IsDir() bool { return fi.Mode().IsDir() }
-
-func (fi *fileInfo) Sys() interface{} { return fi.sys }
+func (fi *fileInfo) IsDir() bool        { return fi.Mode().IsDir() }
+func (fi *fileInfo) Sys() interface{}   { return fi.sys }
 
 // FileStat holds the original unmarshalled values from a call to READDIR or
 // *STAT. It is exported for the purposes of accessing the raw values via
@@ -76,19 +67,15 @@ func fileInfoFromStat(st *FileStat, name string) os.FileInfo {
 
 func fileStatFromInfo(fi os.FileInfo) (uint32, FileStat) {
 	mtime := fi.ModTime().Unix()
-	atime := mtime
-	var flags uint32 = ssh_FILEXFER_ATTR_SIZE |
-		ssh_FILEXFER_ATTR_PERMISSIONS |
-		ssh_FILEXFER_ATTR_ACMODTIME
-
+	flags := sftpAttrFlagSize | sftpAttrFlagPermissions | sftpAttrFlagAcModTime
 	fileStat := FileStat{
 		Size:  uint64(fi.Size()),
 		Mode:  fromFileMode(fi.Mode()),
 		Mtime: uint32(mtime),
-		Atime: uint32(atime),
+		Atime: uint32(mtime),
 	}
 
-	// os specific file stat decoding
+	// OS-specific file stat decoding
 	fileStatFromInfoOs(fi, &flags, &fileStat)
 
 	return flags, fileStat
@@ -101,23 +88,21 @@ func unmarshalAttrs(b []byte) (*FileStat, []byte) {
 
 func getFileStat(flags uint32, b []byte) (*FileStat, []byte) {
 	var fs FileStat
-	if flags&ssh_FILEXFER_ATTR_SIZE == ssh_FILEXFER_ATTR_SIZE {
+	if flags&sftpAttrFlagSize != 0 {
 		fs.Size, b = unmarshalUint64(b)
 	}
-	if flags&ssh_FILEXFER_ATTR_UIDGID == ssh_FILEXFER_ATTR_UIDGID {
+	if flags&sftpAttrFlagUIDGID != 0 {
 		fs.UID, b = unmarshalUint32(b)
-	}
-	if flags&ssh_FILEXFER_ATTR_UIDGID == ssh_FILEXFER_ATTR_UIDGID {
 		fs.GID, b = unmarshalUint32(b)
 	}
-	if flags&ssh_FILEXFER_ATTR_PERMISSIONS == ssh_FILEXFER_ATTR_PERMISSIONS {
+	if flags&sftpAttrFlagPermissions != 0 {
 		fs.Mode, b = unmarshalUint32(b)
 	}
-	if flags&ssh_FILEXFER_ATTR_ACMODTIME == ssh_FILEXFER_ATTR_ACMODTIME {
+	if flags&sftpAttrFlagAcModTime != 0 {
 		fs.Atime, b = unmarshalUint32(b)
 		fs.Mtime, b = unmarshalUint32(b)
 	}
-	if flags&ssh_FILEXFER_ATTR_EXTENDED == ssh_FILEXFER_ATTR_EXTENDED {
+	if flags&sftpAttrFlagExtended != 0 {
 		var count uint32
 		count, b = unmarshalUint32(b)
 		ext := make([]StatExtended, count)
@@ -152,17 +137,17 @@ func marshalFileInfo(b []byte, fi os.FileInfo) []byte {
 	flags, fileStat := fileStatFromInfo(fi)
 
 	b = marshalUint32(b, flags)
-	if flags&ssh_FILEXFER_ATTR_SIZE != 0 {
+	if flags&sftpAttrFlagSize != 0 {
 		b = marshalUint64(b, fileStat.Size)
 	}
-	if flags&ssh_FILEXFER_ATTR_UIDGID != 0 {
+	if flags&sftpAttrFlagUIDGID != 0 {
 		b = marshalUint32(b, fileStat.UID)
 		b = marshalUint32(b, fileStat.GID)
 	}
-	if flags&ssh_FILEXFER_ATTR_PERMISSIONS != 0 {
+	if flags&sftpAttrFlagPermissions != 0 {
 		b = marshalUint32(b, fileStat.Mode)
 	}
-	if flags&ssh_FILEXFER_ATTR_ACMODTIME != 0 {
+	if flags&sftpAttrFlagAcModTime != 0 {
 		b = marshalUint32(b, fileStat.Atime)
 		b = marshalUint32(b, fileStat.Mtime)
 	}

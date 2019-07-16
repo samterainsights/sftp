@@ -404,7 +404,7 @@ func (c *Client) Chtimes(path string, atime time.Time, mtime time.Time) error {
 		Mtime uint32
 	}
 	attrs := times{uint32(atime.Unix()), uint32(mtime.Unix())}
-	return c.setstat(path, ssh_FILEXFER_ATTR_ACMODTIME, attrs)
+	return c.setstat(path, sftpAttrFlagAcModTime, attrs)
 }
 
 // Chown changes the user and group owners of the named file.
@@ -414,12 +414,12 @@ func (c *Client) Chown(path string, uid, gid int) error {
 		GID uint32
 	}
 	attrs := owner{uint32(uid), uint32(gid)}
-	return c.setstat(path, ssh_FILEXFER_ATTR_UIDGID, attrs)
+	return c.setstat(path, sftpAttrFlagUIDGID, attrs)
 }
 
 // Chmod changes the permissions of the named file.
 func (c *Client) Chmod(path string, mode os.FileMode) error {
-	return c.setstat(path, ssh_FILEXFER_ATTR_PERMISSIONS, uint32(mode))
+	return c.setstat(path, sftpAttrFlagPermissions, uint32(mode))
 }
 
 // Truncate sets the size of the named file. Although it may be safely assumed
@@ -427,7 +427,7 @@ func (c *Client) Chmod(path string, mode os.FileMode) error {
 // the SFTP protocol does not specify what behavior the server should do when setting
 // size greater than the current size.
 func (c *Client) Truncate(path string, size int64) error {
-	return c.setstat(path, ssh_FILEXFER_ATTR_SIZE, uint64(size))
+	return c.setstat(path, sftpAttrFlagSize, uint64(size))
 }
 
 // Open opens the named file for reading. If successful, methods on the

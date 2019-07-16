@@ -20,7 +20,7 @@ func TestRequestPflags(t *testing.T) {
 
 func TestRequestAflags(t *testing.T) {
 	aflags := newFileAttrFlags(
-		ssh_FILEXFER_ATTR_SIZE | ssh_FILEXFER_ATTR_UIDGID)
+		sftpAttrFlagSize | sftpAttrFlagUIDGID)
 	assert.True(t, aflags.Size)
 	assert.True(t, aflags.UIDGID)
 	assert.False(t, aflags.Acmodtime)
@@ -30,7 +30,7 @@ func TestRequestAflags(t *testing.T) {
 func TestRequestAttributes(t *testing.T) {
 	// UID/GID
 	fa := FileStat{UID: 1, GID: 2}
-	fl := uint32(ssh_FILEXFER_ATTR_UIDGID)
+	fl := uint32(sftpAttrFlagUIDGID)
 	at := []byte{}
 	at = marshalUint32(at, 1)
 	at = marshalUint32(at, 2)
@@ -38,7 +38,7 @@ func TestRequestAttributes(t *testing.T) {
 	assert.Equal(t, fa, *testFS)
 	// Size and Mode
 	fa = FileStat{Mode: 700, Size: 99}
-	fl = uint32(ssh_FILEXFER_ATTR_SIZE | ssh_FILEXFER_ATTR_PERMISSIONS)
+	fl = uint32(sftpAttrFlagSize | sftpAttrFlagPermissions)
 	at = []byte{}
 	at = marshalUint64(at, 99)
 	at = marshalUint32(at, 700)

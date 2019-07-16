@@ -1,12 +1,10 @@
 package sftp
 
-// Methods on the Request object to make working with the Flags bitmasks and
-// Attr(ibutes) byte blob easier. Use Pflags() when working with an Open/Write
-// request and AttrFlags() and Attributes() when working with SetStat requests.
 import "os"
 
 // FileOpenFlags is the result of unpacking the `pflags` bitfield from an
-// SSH_FXP_OPEN request.
+// `SSH_FXP_OPEN` request. These flags correlate directly with the OS agnostic
+// file open flags mentioned here: https://golang.org/pkg/os/#pkg-constants.
 type FileOpenFlags struct {
 	Read, Write, Append, Creat, Trunc, Excl bool
 }
@@ -28,19 +26,22 @@ func (r *Request) Pflags() FileOpenFlags {
 	return newFileOpenFlags(r.Flags)
 }
 
-// Flags that indicate whether SFTP file attributes were passed. When a flag is
-// true the corresponding attribute should be available from the FileStat
-// object returned by Attributes method. Used with SetStat.
+// FileAttrFlags is the result of unpacking the `flags` bitfield from the file
+// attributes passed on some requests, e.g. `SSH_FXP_SETSTAT`. The flags
+// determine which attributes are included: if the `SSH_FILEXFER_ATTR_SIZE` bit
+// is set (`attr.Size == true`), then the provided attributes are expected to
+// contain a `uint64` specifying the file size.
 type FileAttrFlags struct {
-	Size, UIDGID, Permissions, Acmodtime bool
+	Size, UIDGID, Permissions, Acmodtime, Extended bool
 }
 
 func newFileAttrFlags(flags uint32) FileAttrFlags {
 	return FileAttrFlags{
-		Size:        (flags & ssh_FILEXFER_ATTR_SIZE) != 0,
-		UIDGID:      (flags & ssh_FILEXFER_ATTR_UIDGID) != 0,
-		Permissions: (flags & ssh_FILEXFER_ATTR_PERMISSIONS) != 0,
-		Acmodtime:   (flags & ssh_FILEXFER_ATTR_ACMODTIME) != 0,
+		Size:        flags&sftpAttrFlagSize != 0,
+		UIDGID:      flags&sftpAttrFlagUIDGID != 0,
+		Permissions: flags&sftpAttrFlagPermissions != 0,
+		Acmodtime:   flags&sftpAttrFlagAcModTime != 0,
+		Extended:    flags&sftpAttrFlagExtended != 0,
 	}
 }
 
@@ -55,9 +56,9 @@ func (a FileStat) FileMode() os.FileMode {
 	return os.FileMode(a.Mode)
 }
 
-// Attributres parses file attributes byte blob and return them in a
+// Attributes parses file attributes byte blob and return them in a
 // FileStat object.
 func (r *Request) Attributes() *FileStat {
-	fs, _ := getFileStat(r.Flags, r.Attrs)
-	return fs
+	stat, _ := getFileStat(r.Flags, r.Attrs)
+	return stat
 }

@@ -17,9 +17,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-const (
-	SftpServerWorkerCount = 8
-)
+const sftpServerWorkerCount = 8
 
 // Server is an SSH File Transfer Protocol (sftp) server.
 // This is intended to provide the sftp subsystem to an ssh server daemon.
@@ -141,7 +139,7 @@ func (svr *Server) sftpServerWorker(pktChan chan orderedRequest) error {
 		if !readonly && svr.readOnly {
 			svr.sendPacket(orderedResponse{
 				responsePacket: statusFromError(pkt, syscall.EPERM),
-				orderid:        pkt.orderId()})
+				orderid:        pkt.orderID()})
 			continue
 		}
 
@@ -282,7 +280,7 @@ func handlePacket(s *Server, p orderedRequest) error {
 		return errors.Errorf("unexpected packet type %T", p)
 	}
 
-	s.pktMgr.readyPacket(s.pktMgr.newOrderedResponse(rpkt, p.orderId()))
+	s.pktMgr.readyPacket(s.pktMgr.newOrderedResponse(rpkt, p.orderID()))
 	return nil
 }
 
@@ -439,19 +437,19 @@ func (p sshFxpSetstatPacket) respond(svr *Server) responsePacket {
 	var err error
 
 	debug("setstat name \"%s\"", p.Path)
-	if (p.Flags & ssh_FILEXFER_ATTR_SIZE) != 0 {
+	if (p.Flags & sftpAttrFlagSize) != 0 {
 		var size uint64
 		if size, b, err = unmarshalUint64Safe(b); err == nil {
 			err = os.Truncate(p.Path, int64(size))
 		}
 	}
-	if (p.Flags & ssh_FILEXFER_ATTR_PERMISSIONS) != 0 {
+	if (p.Flags & sftpAttrFlagPermissions) != 0 {
 		var mode uint32
 		if mode, b, err = unmarshalUint32Safe(b); err == nil {
 			err = os.Chmod(p.Path, os.FileMode(mode))
 		}
 	}
-	if (p.Flags & ssh_FILEXFER_ATTR_ACMODTIME) != 0 {
+	if (p.Flags & sftpAttrFlagAcModTime) != 0 {
 		var atime uint32
 		var mtime uint32
 		if atime, b, err = unmarshalUint32Safe(b); err != nil {
@@ -462,7 +460,7 @@ func (p sshFxpSetstatPacket) respond(svr *Server) responsePacket {
 			err = os.Chtimes(p.Path, atimeT, mtimeT)
 		}
 	}
-	if (p.Flags & ssh_FILEXFER_ATTR_UIDGID) != 0 {
+	if (p.Flags & sftpAttrFlagUIDGID) != 0 {
 		var uid uint32
 		var gid uint32
 		if uid, b, err = unmarshalUint32Safe(b); err != nil {
@@ -486,19 +484,19 @@ func (p sshFxpFsetstatPacket) respond(svr *Server) responsePacket {
 	var err error
 
 	debug("fsetstat name \"%s\"", f.Name())
-	if (p.Flags & ssh_FILEXFER_ATTR_SIZE) != 0 {
+	if (p.Flags & sftpAttrFlagSize) != 0 {
 		var size uint64
 		if size, b, err = unmarshalUint64Safe(b); err == nil {
 			err = f.Truncate(int64(size))
 		}
 	}
-	if (p.Flags & ssh_FILEXFER_ATTR_PERMISSIONS) != 0 {
+	if (p.Flags & sftpAttrFlagPermissions) != 0 {
 		var mode uint32
 		if mode, b, err = unmarshalUint32Safe(b); err == nil {
 			err = f.Chmod(os.FileMode(mode))
 		}
 	}
-	if (p.Flags & ssh_FILEXFER_ATTR_ACMODTIME) != 0 {
+	if (p.Flags & sftpAttrFlagAcModTime) != 0 {
 		var atime uint32
 		var mtime uint32
 		if atime, b, err = unmarshalUint32Safe(b); err != nil {
@@ -509,7 +507,7 @@ func (p sshFxpFsetstatPacket) respond(svr *Server) responsePacket {
 			err = os.Chtimes(f.Name(), atimeT, mtimeT)
 		}
 	}
-	if (p.Flags & ssh_FILEXFER_ATTR_UIDGID) != 0 {
+	if (p.Flags & sftpAttrFlagUIDGID) != 0 {
 		var uid uint32
 		var gid uint32
 		if uid, b, err = unmarshalUint32Safe(b); err != nil {
