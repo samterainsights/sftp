@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"time"
 
 	"github.com/pkg/errors"
 )
@@ -16,6 +17,17 @@ var (
 	errShortPacket           = errors.New("packet too short")
 	errUnknownExtendedPacket = errors.New("unknown extended packet")
 )
+
+// FileAttr is a Golang idiomatic represention of the SFTP file attributes
+// present on some requests, described here:
+// https://tools.ietf.org/html/draft-ietf-secsh-filexfer-02#section-5
+type FileAttr struct {
+	Flags           uint32
+	Size            uint64
+	UID, GID, Perms uint32
+	AcTime, ModTime time.Time
+	Extensions      []StatExtended
+}
 
 func marshalUint32(b []byte, v uint32) []byte {
 	return append(b, byte(v>>24), byte(v>>16), byte(v>>8), byte(v))
@@ -68,27 +80,28 @@ func unmarshalUint32(b []byte) (uint32, []byte) {
 }
 
 func unmarshalUint32Safe(b []byte) (uint32, []byte, error) {
-	var v uint32
-	if len(b) < 4 {
-		return 0, nil, errShortPacket
+	if len(b) >= 4 {
+		// Inline binary.BigEndian.Uint32(b) in the hopes that the compiler is
+		// smart enough to optimize out bounds checks since we checked above.
+		v := uint32(b[3]) | uint32(b[2])<<8 | uint32(b[1])<<16 | uint32(b[0])<<24
+		return v, b[4:], nil
 	}
-	v, b = unmarshalUint32(b)
-	return v, b, nil
+	return 0, nil, errShortPacket
 }
 
 func unmarshalUint64(b []byte) (uint64, []byte) {
-	h, b := unmarshalUint32(b)
-	l, b := unmarshalUint32(b)
-	return uint64(h)<<32 | uint64(l), b
+	return binary.BigEndian.Uint64(b), b[8:]
 }
 
 func unmarshalUint64Safe(b []byte) (uint64, []byte, error) {
-	var v uint64
-	if len(b) < 8 {
-		return 0, nil, errShortPacket
+	if len(b) >= 8 {
+		// Inline binary.BigEndian.Uint64(b) in the hopes that the compiler is
+		// smart enough to optimize out bounds checks since we checked above.
+		v := uint64(b[7]) | uint64(b[6])<<8 | uint64(b[5])<<16 | uint64(b[4])<<24 |
+			uint64(b[3])<<32 | uint64(b[2])<<40 | uint64(b[1])<<48 | uint64(b[0])<<56
+		return v, b[8:], nil
 	}
-	v, b = unmarshalUint64(b)
-	return v, b, nil
+	return 0, nil, errShortPacket
 }
 
 func unmarshalString(b []byte) (string, []byte) {
@@ -107,6 +120,59 @@ func unmarshalStringSafe(b []byte) (string, []byte, error) {
 	return string(b[:n]), b[n:], nil
 }
 
+func unmarshalFileAttrSafe(b []byte) (_ *FileAttr, _ []byte, err error) {
+	var attr FileAttr
+	if attr.Flags, b, err = unmarshalUint32Safe(b); err != nil {
+		return
+	}
+	if attr.Flags&sftpAttrFlagSize != 0 {
+		if attr.Size, b, err = unmarshalUint64Safe(b); err != nil {
+			return
+		}
+	}
+	if attr.Flags&sftpAttrFlagUIDGID != 0 {
+		if attr.UID, b, err = unmarshalUint32Safe(b); err != nil {
+			return
+		}
+		if attr.GID, b, err = unmarshalUint32Safe(b); err != nil {
+			return
+		}
+	}
+	if attr.Flags&sftpAttrFlagPermissions != 0 {
+		if attr.Perms, b, err = unmarshalUint32Safe(b); err != nil {
+			return
+		}
+	}
+	if attr.Flags&sftpAttrFlagAcModTime != 0 {
+		var atime, mtime uint32
+		if atime, b, err = unmarshalUint32Safe(b); err != nil {
+			return
+		}
+		if mtime, b, err = unmarshalUint32Safe(b); err != nil {
+			return
+		}
+		attr.AcTime = time.Unix(int64(atime), 0)
+		attr.ModTime = time.Unix(int64(mtime), 0)
+	}
+	if attr.Flags&sftpAttrFlagExtended != 0 {
+		var count uint32
+		if count, b, err = unmarshalUint32Safe(b); err != nil {
+			return
+		}
+
+		attr.Extensions = make([]StatExtended, count)
+		for i := uint32(0); i < count; i++ {
+			if attr.Extensions[i].ExtType, b, err = unmarshalStringSafe(b); err != nil {
+				return
+			}
+			if attr.Extensions[i].ExtData, b, err = unmarshalStringSafe(b); err != nil {
+				return
+			}
+		}
+	}
+	return &attr, b, nil
+}
+
 // writePacket marshals a packet and then write the length and data to a
 // destination.
 //
@@ -120,11 +186,17 @@ func writePacket(w io.Writer, m encoding.BinaryMarshaler) error {
 	}
 	debug("writePacket [type=%s]: %x", fxp(b[0]), b[1:])
 
-	// Slide packet down 4 bytes to make room for length header.
-	l := uint32(len(b))
-	b = append(b, 0, 0, 0, 0) // optimistically assume bb has capacity
+	// READ CAREFULLY
+	// We need to prefix the data (and type) with a 4-byte length header.
+	// The only way to grow a slice's length in Go is using append(), so we
+	// optimistically assume the capacity has at least 4 more bytes than
+	// the current length and slide data down in the hope that we do not
+	// have to allocate another underlying buffer.
+	pktLen := uint32(len(b))
+	b = append(b, 0, 0, 0, 0)
 	copy(b[4:], b)
-	binary.BigEndian.PutUint32(b[:4], l)
+	binary.BigEndian.PutUint32(b[:4], pktLen)
+	// --------------------------------------------
 
 	if _, err = w.Write(b); err != nil {
 		return errors.Wrap(err, "error writing packet")
@@ -154,17 +226,6 @@ type extensionPair struct {
 	Data string
 }
 
-func unmarshalExtensionPair(b []byte) (extensionPair, []byte, error) {
-	var ep extensionPair
-	var err error
-	ep.Name, b, err = unmarshalStringSafe(b)
-	if err != nil {
-		return ep, b, err
-	}
-	ep.Data, b, err = unmarshalStringSafe(b)
-	return ep, b, err
-}
-
 // Here starts the definition of packets along with their MarshalBinary
 // implementations.
 // Manually writing the marshalling logic wins us a lot of time and
@@ -191,20 +252,21 @@ func (p sshFxInitPacket) MarshalBinary() ([]byte, error) {
 	return b, nil
 }
 
-func (p *sshFxInitPacket) UnmarshalBinary(b []byte) error {
-	var err error
+func (p *sshFxInitPacket) UnmarshalBinary(b []byte) (err error) {
 	if p.Version, b, err = unmarshalUint32Safe(b); err != nil {
-		return err
+		return
 	}
 	for len(b) > 0 {
 		var ep extensionPair
-		ep, b, err = unmarshalExtensionPair(b)
-		if err != nil {
-			return err
+		if ep.Name, b, err = unmarshalStringSafe(b); err != nil {
+			return
+		}
+		if ep.Data, b, err = unmarshalStringSafe(b); err != nil {
+			return
 		}
 		p.Extensions = append(p.Extensions, ep)
 	}
-	return nil
+	return
 }
 
 type sshFxVersionPacket struct {
@@ -475,7 +537,7 @@ type sshFxpOpenPacket struct {
 	ID     uint32
 	Path   string
 	Pflags uint32
-	Flags  uint32 // ignored
+	Attr   *FileAttr
 }
 
 func (p sshFxpOpenPacket) id() uint32 { return p.ID }
@@ -490,22 +552,26 @@ func (p sshFxpOpenPacket) MarshalBinary() ([]byte, error) {
 	b = marshalUint32(b, p.ID)
 	b = marshalString(b, p.Path)
 	b = marshalUint32(b, p.Pflags)
-	b = marshalUint32(b, p.Flags)
+	// TODO(samterainsights): actually marshal the file attributes,
+	// but right now I'm pressed for server functionality.
+	b = marshalUint32(b, 0)
 	return b, nil
 }
 
-func (p *sshFxpOpenPacket) UnmarshalBinary(b []byte) error {
-	var err error
+func (p *sshFxpOpenPacket) UnmarshalBinary(b []byte) (err error) {
 	if p.ID, b, err = unmarshalUint32Safe(b); err != nil {
-		return err
-	} else if p.Path, b, err = unmarshalStringSafe(b); err != nil {
-		return err
-	} else if p.Pflags, b, err = unmarshalUint32Safe(b); err != nil {
-		return err
-	} else if p.Flags, _, err = unmarshalUint32Safe(b); err != nil {
-		return err
+		return
 	}
-	return nil
+	if p.Path, b, err = unmarshalStringSafe(b); err != nil {
+		return
+	}
+	if p.Pflags, b, err = unmarshalUint32Safe(b); err != nil {
+		return
+	}
+	if p.Attr, _, err = unmarshalFileAttrSafe(b); err != nil {
+		return
+	}
+	return
 }
 
 type sshFxpReadPacket struct {

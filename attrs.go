@@ -86,38 +86,6 @@ func unmarshalAttrs(b []byte) (*FileStat, []byte) {
 	return getFileStat(flags, b)
 }
 
-func getFileStat(flags uint32, b []byte) (*FileStat, []byte) {
-	var fs FileStat
-	if flags&sftpAttrFlagSize != 0 {
-		fs.Size, b = unmarshalUint64(b)
-	}
-	if flags&sftpAttrFlagUIDGID != 0 {
-		fs.UID, b = unmarshalUint32(b)
-		fs.GID, b = unmarshalUint32(b)
-	}
-	if flags&sftpAttrFlagPermissions != 0 {
-		fs.Mode, b = unmarshalUint32(b)
-	}
-	if flags&sftpAttrFlagAcModTime != 0 {
-		fs.Atime, b = unmarshalUint32(b)
-		fs.Mtime, b = unmarshalUint32(b)
-	}
-	if flags&sftpAttrFlagExtended != 0 {
-		var count uint32
-		count, b = unmarshalUint32(b)
-		ext := make([]StatExtended, count)
-		for i := uint32(0); i < count; i++ {
-			var typ string
-			var data string
-			typ, b = unmarshalString(b)
-			data, b = unmarshalString(b)
-			ext[i] = StatExtended{typ, data}
-		}
-		fs.Extended = ext
-	}
-	return &fs, b
-}
-
 func marshalFileInfo(b []byte, fi os.FileInfo) []byte {
 	// attributes variable struct, and also variable per protocol version
 	// spec version 3 attributes:

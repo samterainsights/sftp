@@ -81,6 +81,7 @@ func (p sshFxVersionPacket) id() uint32 { return 0 }
 // take raw incoming packet data and build packet objects
 func makePacket(p rxPacket) (requestPacket, error) {
 	var pkt requestPacket
+
 	switch p.pktType {
 	case ssh_FXP_INIT:
 		pkt = &sshFxInitPacket{}
@@ -123,12 +124,10 @@ func makePacket(p rxPacket) (requestPacket, error) {
 	case ssh_FXP_EXTENDED:
 		pkt = &sshFxpExtendedPacket{}
 	default:
-		return nil, errors.Errorf("unhandled packet type: %s", p.pktType)
+		return nil, errors.Errorf("unknown packet type: %d", p.pktType)
 	}
-	if err := pkt.UnmarshalBinary(p.pktBytes); err != nil {
-		// Return partially unpacked packet to allow callers to return
-		// error messages appropriately with necessary id() method.
-		return pkt, err
-	}
-	return pkt, nil
+
+	// If an error occurs, still return the partially unpacked packet to allow callers
+	// to return error messages appropriately with necessary id() method.
+	return pkt, pkt.UnmarshalBinary(p.pktBytes)
 }
