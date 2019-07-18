@@ -1,6 +1,6 @@
 # Golang SFTP Client/Server
 
-The `sftp` package implements an SFTP client interface for performing filesystem actions on a remote SSH server, as well as a server implementation for which user code can implement custom request handlers or use one of the included request handlers, e.g. `sftp.MemFS()`.
+The `sftp` package implements an SFTP client interface for performing filesystem actions on a remote SSH server, as well as a server implementation for which user code can implement custom request handlers or use one of the included implementations like `sftp.MemFS()`.
 
 [![UNIX Build Status](https://travis-ci.org/pkg/sftp.svg?branch=master)](https://travis-ci.org/pkg/sftp) [![GoDoc](https://godoc.org/github.com/pkg/sftp?status.svg)](http://godoc.org/github.com/pkg/sftp)
 
