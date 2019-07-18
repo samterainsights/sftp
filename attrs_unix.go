@@ -8,7 +8,7 @@ import (
 	"syscall"
 )
 
-func fileStatFromInfoOs(fi os.FileInfo, flags *uint32, fileStat *FileStat) {
+func fileStatFromInfoOs(fi os.FileInfo, flags *uint32, fileStat *FileAttr) {
 	if statt, ok := fi.Sys().(*syscall.Stat_t); ok {
 		*flags |= sftpAttrFlagUIDGID
 		fileStat.UID = statt.Uid

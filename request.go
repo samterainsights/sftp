@@ -259,7 +259,7 @@ func (r *Request) call(h RequestHandler, pkt requestPacket) responsePacket {
 			NameAttrs: []sshFxpNameAttr{{
 				Name:     filename,
 				LongName: filename,
-				Attrs:    emptyFileStat,
+				Attrs:    emptyFileAttr,
 			}},
 		}
 

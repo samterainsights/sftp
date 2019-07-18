@@ -222,7 +222,7 @@ func cleanPacketPath(pkt *sshFxpRealpathPacket) responsePacket {
 		NameAttrs: []sshFxpNameAttr{{
 			Name:     path,
 			LongName: path,
-			Attrs:    emptyFileStat,
+			Attrs:    emptyFileAttr,
 		}},
 	}
 }

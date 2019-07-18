@@ -12,7 +12,7 @@ func fakeFileInfoSys() interface{} {
 }
 
 func testOsSys(sys interface{}) error {
-	fstat := sys.(*FileStat)
+	fstat := sys.(*FileAttr)
 	if fstat.UID != uint32(65534) {
 		return errors.New("uid did not match")
 	}

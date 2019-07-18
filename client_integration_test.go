@@ -482,7 +482,7 @@ func TestClientFileName(t *testing.T) {
 	}
 }
 
-func TestClientFileStat(t *testing.T) {
+func TestClientFileAttr(t *testing.T) {
 	sftp, cmd := testClient(t, READONLY, NO_DELAY)
 	defer cmd.Wait()
 	defer sftp.Close()

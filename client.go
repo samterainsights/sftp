@@ -232,7 +232,7 @@ func (c *Client) ReadDir(p string) ([]os.FileInfo, error) {
 				var filename string
 				filename, data = unmarshalString(data)
 				_, data = unmarshalString(data) // discard longname
-				var attr *FileStat
+				var attr *FileAttr
 				attr, data, err = unmarshalFileAttrSafe(data)
 				if filename == "." || filename == ".." {
 					continue
@@ -294,7 +294,10 @@ func (c *Client) Stat(p string) (os.FileInfo, error) {
 		if sid != id {
 			return nil, &unexpectedIDErr{id, sid}
 		}
-		attr, _ := unmarshalAttrs(data)
+		attr, _, err := unmarshalFileAttrSafe(data)
+		if err != nil {
+			return nil, err
+		}
 		return fileInfoFromStat(attr, path.Base(p)), nil
 	case ssh_FXP_STATUS:
 		return nil, normaliseError(unmarshalStatus(id, data))
@@ -320,7 +323,10 @@ func (c *Client) Lstat(p string) (os.FileInfo, error) {
 		if sid != id {
 			return nil, &unexpectedIDErr{id, sid}
 		}
-		attr, _ := unmarshalAttrs(data)
+		attr, _, err := unmarshalFileAttrSafe(data)
+		if err != nil {
+			return nil, err
+		}
 		return fileInfoFromStat(attr, path.Base(p)), nil
 	case ssh_FXP_STATUS:
 		return nil, normaliseError(unmarshalStatus(id, data))
@@ -489,7 +495,7 @@ func (c *Client) close(handle string) error {
 	}
 }
 
-func (c *Client) fstat(handle string) (*FileStat, error) {
+func (c *Client) fstat(handle string) (*FileAttr, error) {
 	id := c.nextID()
 	typ, data, err := c.sendPacket(sshFxpFstatPacket{
 		ID:     id,
@@ -504,7 +510,10 @@ func (c *Client) fstat(handle string) (*FileStat, error) {
 		if sid != id {
 			return nil, &unexpectedIDErr{id, sid}
 		}
-		attr, _ := unmarshalAttrs(data)
+		attr, _, err := unmarshalFileAttrSafe(data)
+		if err != nil {
+			return nil, err
+		}
 		return attr, nil
 	case ssh_FXP_STATUS:
 		return nil, normaliseError(unmarshalStatus(id, data))
@@ -1257,7 +1266,7 @@ func marshalStatus(b []byte, err StatusError) []byte {
 // flags converts the flags passed to OpenFile into ssh flags.
 // Unsupported flags are ignored.
 func flags(f int) uint32 {
-	var out uint32
+	var out pflag
 	switch f & os.O_WRONLY {
 	case os.O_WRONLY:
 		out |= PFlagWrite
@@ -1279,5 +1288,5 @@ func flags(f int) uint32 {
 	if f&os.O_EXCL == os.O_EXCL {
 		out |= PFlagExclusive
 	}
-	return out
+	return uint32(out)
 }

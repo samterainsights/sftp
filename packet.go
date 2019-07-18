@@ -18,18 +18,6 @@ var (
 	errUnknownExtendedPacket = errors.New("unknown extended packet")
 )
 
-// FileAttr is a Golang idiomatic represention of the SFTP file attributes
-// present on some requests, described here:
-// https://tools.ietf.org/html/draft-ietf-secsh-filexfer-02#section-5
-type FileAttr struct {
-	Flags           uint32
-	Size            uint64
-	UID, GID        uint32
-	Perms           os.FileMode
-	AcTime, ModTime time.Time
-	Extensions      []StatExtended
-}
-
 func marshalUint32(b []byte, v uint32) []byte {
 	return append(b, byte(v>>24), byte(v>>16), byte(v>>8), byte(v))
 }

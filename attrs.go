@@ -34,41 +34,39 @@ func (fi *fileInfo) ModTime() time.Time { return fi.mtime }
 func (fi *fileInfo) IsDir() bool        { return fi.Mode().IsDir() }
 func (fi *fileInfo) Sys() interface{}   { return fi.sys }
 
-// FileStat holds the original unmarshalled values from a call to READDIR or
-// *STAT. It is exported for the purposes of accessing the raw values via
-// os.FileInfo.Sys(). It is also used server side to store the unmarshalled
-// values for SetStat.
-type FileStat struct {
-	Size     uint64
-	Mode     uint32
-	Mtime    uint32
-	Atime    uint32
-	UID      uint32
-	GID      uint32
-	Extended []StatExtended
+// FileAttr is a Golang idiomatic represention of the SFTP file attributes
+// present on some requests, described here:
+// https://tools.ietf.org/html/draft-ietf-secsh-filexfer-02#section-5
+type FileAttr struct {
+	Flags           uint32
+	Size            uint64
+	UID, GID        uint32
+	Perms           os.FileMode
+	AcTime, ModTime time.Time
+	Extensions      []StatExtended
 }
 
-// StatExtended contains additional, extended information for a FileStat.
+// StatExtended contains additional, extended information for a FileAttr.
 type StatExtended struct {
 	ExtType string
 	ExtData string
 }
 
-func fileInfoFromStat(st *FileStat, name string) os.FileInfo {
+func fileInfoFromStat(st *FileAttr, name string) os.FileInfo {
 	fs := &fileInfo{
 		name:  name,
 		size:  int64(st.Size),
-		mode:  toFileMode(st.Mode),
-		mtime: time.Unix(int64(st.Mtime), 0),
+		mode:  st.Perms,
+		mtime: st.ModTime,
 		sys:   st,
 	}
 	return fs
 }
 
-func fileStatFromInfo(fi os.FileInfo) (uint32, FileStat) {
+func fileStatFromInfo(fi os.FileInfo) (uint32, FileAttr) {
 	mtime := fi.ModTime().Unix()
 	flags := sftpAttrFlagSize | sftpAttrFlagPermissions | sftpAttrFlagAcModTime
-	fileStat := FileStat{
+	fileStat := FileAttr{
 		Size:  uint64(fi.Size()),
 		Mode:  fromFileMode(fi.Mode()),
 		Mtime: uint32(mtime),

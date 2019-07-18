@@ -214,7 +214,7 @@ func handlePacket(s *Server, p orderedRequest) error {
 			NameAttrs: []sshFxpNameAttr{{
 				Name:     f,
 				LongName: f,
-				Attrs:    emptyFileStat,
+				Attrs:    emptyFileAttr,
 			}},
 		}
 		if err != nil {
@@ -228,7 +228,7 @@ func handlePacket(s *Server, p orderedRequest) error {
 			NameAttrs: []sshFxpNameAttr{{
 				Name:     f,
 				LongName: f,
-				Attrs:    emptyFileStat,
+				Attrs:    emptyFileAttr,
 			}},
 		}
 		if err != nil {
@@ -358,7 +358,7 @@ func (p sshFxpStatResponse) MarshalBinary() ([]byte, error) {
 	return b, nil
 }
 
-var emptyFileStat = []interface{}{uint32(0)}
+var emptyFileAttr = []interface{}{uint32(0)}
 
 func (p sshFxpOpenPacket) readonly() bool {
 	return !p.hasPflags(PFlagWrite)
