@@ -150,7 +150,7 @@ func TestRequestGet(t *testing.T) {
 	request.open(handlers, pkt)
 	// req.length is 5, so we test reads in 5 byte chunks
 	for i, txt := range []string{"file-", "data."} {
-		pkt := &sshFxpReadPacket{ID: uint32(i), Handle: "a",
+		pkt := &fxpReadPkt{ID: uint32(i), Handle: "a",
 			Offset: uint64(i * 5), Len: 5}
 		rpkt := request.call(handlers, pkt)
 		dpkt := rpkt.(*sshFxpDataPacket)
@@ -174,11 +174,11 @@ func TestRequestPut(t *testing.T) {
 	handlers := newTestHandlers()
 	request := testRequest("Put")
 	request.state.writerAt, _ = handlers.FilePut.Filewrite(request)
-	pkt := &sshFxpWritePacket{ID: 0, Handle: "a", Offset: 0, Length: 5,
+	pkt := &fxpWritePkt{ID: 0, Handle: "a", Offset: 0, Length: 5,
 		Data: []byte("file-")}
 	rpkt := request.call(handlers, pkt)
 	checkOkStatus(t, rpkt)
-	pkt = &sshFxpWritePacket{ID: 1, Handle: "a", Offset: 5, Length: 5,
+	pkt = &fxpWritePkt{ID: 1, Handle: "a", Offset: 5, Length: 5,
 		Data: []byte("data.")}
 	rpkt = request.call(handlers, pkt)
 	checkOkStatus(t, rpkt)

@@ -185,7 +185,7 @@ type sshFxpTestBadExtendedPacket struct {
 
 func (p sshFxpTestBadExtendedPacket) id() uint32 { return p.ID }
 
-func (p sshFxpTestBadExtendedPacket) MarshalBinary() ([]byte, error) {
+func (p sshFxpTestBadExtendedPacket) /*FIXME(samterainsights): encode length prefix*/ MarshalBinary() ([]byte, error) {
 	l := 1 + 4 + 4 + // type(byte) + uint32 + uint32
 		len(p.Extension) +
 		len(p.Data)
@@ -303,7 +303,7 @@ func TestOpenStatRace(t *testing.T) {
 	pflags := flags(os.O_RDWR | os.O_CREATE | os.O_TRUNC)
 	ch := make(chan result, 3)
 	id1 := client.nextID()
-	client.dispatchRequest(ch, sshFxpOpenPacket{
+	client.dispatchRequest(ch, fxpOpenPkt{
 		ID:     id1,
 		Path:   tmppath,
 		Pflags: pflags,

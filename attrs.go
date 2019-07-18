@@ -9,16 +9,18 @@ import (
 	"time"
 )
 
+type attrFlag uint32
+
 const (
-	sftpAttrFlagSize uint32 = 1 << iota
-	sftpAttrFlagUIDGID
-	sftpAttrFlagPermissions
-	sftpAttrFlagAcModTime
+	attrFlagSize = attrFlag(1 << iota)
+	attrFlagUIDGID
+	attrFlagPermissions
+	attrFlagAcModTime
 	// -- room left in protocol for more flag bits --
-	sftpAttrFlagExtended uint32 = 1 << 31
+	attrFlagExtended = attrFlag(1 << 31)
 )
 
-// fileInfo is an artificial type designed to satisfy os.FileInfo.
+// fileInfo is an artificial type for wrapping a FileAttr with the os.FileInfo interface.
 type fileInfo struct {
 	name  string
 	size  int64
@@ -38,8 +40,16 @@ func (fi *fileInfo) Sys() interface{}   { return fi.sys }
 // present on some requests, described here:
 // https://tools.ietf.org/html/draft-ietf-secsh-filexfer-02#section-5
 type FileAttr struct {
-	Flags           uint32
-	Size            uint64
+	// TODO(samterainsights): validate flags on incoming packets and return error if bits unknown
+	// to the negotiated protocol version are set:
+	//
+	//	"It is a protocol error if a packet with unsupported protocol bits is received."
+	//		-- https://tools.ietf.org/html/draft-ietf-secsh-filexfer-02#section-5
+	Flags attrFlag
+
+	// SFTP specifies uint64: do not cast to int64 for Golang's sake or we may lose information!
+	Size uint64
+
 	UID, GID        uint32
 	Perms           os.FileMode
 	AcTime, ModTime time.Time
@@ -50,6 +60,30 @@ type FileAttr struct {
 type StatExtended struct {
 	ExtType string
 	ExtData string
+}
+
+func (attr *FileAttr) encodedSize() int {
+	size := 4 // uint32 flags
+	if attr.Flags&attrFlagSize != 0 {
+		size += 8 // uint64 size
+	}
+	if attr.Flags&attrFlagUIDGID != 0 {
+		size += 8 // uint32 uid + uint32 gid
+	}
+	if attr.Flags&attrFlagPermissions != 0 {
+		size += 4 // uint32 permissions
+	}
+	if attr.Flags&attrFlagAcModTime != 0 {
+		size += 8 // uint32 atime + uint32 mtime
+	}
+	if attr.Flags&attrFlagExtended != 0 {
+		size += 4 // uint32 extended_count
+		for _, ext := range attr.Extensions {
+			// two strings, each: uint32 length + [data]
+			size += 8 + len(ext.ExtType) + len(ext.ExtData)
+		}
+	}
+	return size
 }
 
 func fileInfoFromStat(st *FileAttr, name string) os.FileInfo {
@@ -63,54 +97,44 @@ func fileInfoFromStat(st *FileAttr, name string) os.FileInfo {
 	return fs
 }
 
-func fileStatFromInfo(fi os.FileInfo) (uint32, FileAttr) {
-	mtime := fi.ModTime().Unix()
-	flags := sftpAttrFlagSize | sftpAttrFlagPermissions | sftpAttrFlagAcModTime
-	fileStat := FileAttr{
-		Size:  uint64(fi.Size()),
-		Mode:  fromFileMode(fi.Mode()),
-		Mtime: uint32(mtime),
-		Atime: uint32(mtime),
+func fileStatFromInfo(fi os.FileInfo) FileAttr {
+	if attr, ok := fi.Sys().(*FileAttr); ok {
+		return *attr
+	}
+
+	mtime := fi.ModTime()
+	attr := FileAttr{
+		Flags:   attrFlagSize | attrFlagPermissions | attrFlagAcModTime,
+		Size:    uint64(fi.Size()),
+		Perms:   fi.Mode(),
+		AcTime:  mtime,
+		ModTime: mtime,
 	}
 
 	// OS-specific file stat decoding
-	fileStatFromInfoOs(fi, &flags, &fileStat)
+	fileAttrFromInfoOS(fi, &attr)
 
-	return flags, fileStat
+	return attr
 }
 
-func marshalFileInfo(b []byte, fi os.FileInfo) []byte {
-	// attributes variable struct, and also variable per protocol version
-	// spec version 3 attributes:
-	// uint32   flags
-	// uint64   size           present only if flag SSH_FILEXFER_ATTR_SIZE
-	// uint32   uid            present only if flag SSH_FILEXFER_ATTR_UIDGID
-	// uint32   gid            present only if flag SSH_FILEXFER_ATTR_UIDGID
-	// uint32   permissions    present only if flag SSH_FILEXFER_ATTR_PERMISSIONS
-	// uint32   atime          present only if flag SSH_FILEXFER_ACMODTIME
-	// uint32   mtime          present only if flag SSH_FILEXFER_ACMODTIME
-	// uint32   extended_count present only if flag SSH_FILEXFER_ATTR_EXTENDED
-	// string   extended_type
-	// string   extended_data
-	// ...      more extended data (extended_type - extended_data pairs),
-	// 	   so that number of pairs equals extended_count
-
-	flags, fileStat := fileStatFromInfo(fi)
-
+func marshalFileAttr(b []byte, fi os.FileInfo) []byte {
+	attr := fileStatFromInfo(fi)
+	flags := attr.Flags
 	b = marshalUint32(b, flags)
-	if flags&sftpAttrFlagSize != 0 {
-		b = marshalUint64(b, fileStat.Size)
+
+	if flags&attrFlagSize != 0 {
+		b = marshalUint64(b, attr.Size)
 	}
-	if flags&sftpAttrFlagUIDGID != 0 {
-		b = marshalUint32(b, fileStat.UID)
-		b = marshalUint32(b, fileStat.GID)
+	if flags&attrFlagUIDGID != 0 {
+		b = marshalUint32(b, attr.UID)
+		b = marshalUint32(b, attr.GID)
 	}
-	if flags&sftpAttrFlagPermissions != 0 {
-		b = marshalUint32(b, fileStat.Mode)
+	if flags&attrFlagPermissions != 0 {
+		b = marshalUint32(b, fromFileMode(attr.Perms))
 	}
-	if flags&sftpAttrFlagAcModTime != 0 {
-		b = marshalUint32(b, fileStat.Atime)
-		b = marshalUint32(b, fileStat.Mtime)
+	if flags&attrFlagAcModTime != 0 {
+		b = marshalUint32(b, uint32(attr.AcTime.Unix()))
+		b = marshalUint32(b, uint32(attr.ModTime.Unix()))
 	}
 
 	return b
@@ -147,7 +171,7 @@ func toFileMode(mode uint32) os.FileMode {
 	return fm
 }
 
-// fromFileMode converts from the os.FileMode specification to sftp filemode bits
+// fromFileMode converts from the os.FileMode specification to SFTP permission/mode bits
 func fromFileMode(mode os.FileMode) uint32 {
 	ret := uint32(0)
 

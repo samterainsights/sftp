@@ -30,7 +30,7 @@ func fake(rid, order uint32) fakepacket {
 	return fakepacket{reqid: rid, oid: order}
 }
 
-func (fakepacket) MarshalBinary() ([]byte, error) {
+func (fakepacket) /*FIXME(samterainsights): encode length prefix*/ MarshalBinary() ([]byte, error) {
 	return []byte{}, nil
 }
 
@@ -116,12 +116,12 @@ func TestPacketManager(t *testing.T) {
 func (p sshFxpRemovePacket) String() string {
 	return fmt.Sprintf("RmPkt:%d", p.ID)
 }
-func (p sshFxpOpenPacket) String() string {
+func (p fxpOpenPkt) String() string {
 	return fmt.Sprintf("OpPkt:%d", p.ID)
 }
-func (p sshFxpWritePacket) String() string {
+func (p fxpWritePkt) String() string {
 	return fmt.Sprintf("WrPkt:%d", p.ID)
 }
-func (p sshFxpClosePacket) String() string {
+func (p fxpClosePkt) String() string {
 	return fmt.Sprintf("ClPkt:%d", p.ID)
 }

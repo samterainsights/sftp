@@ -6,6 +6,6 @@ import (
 	"os"
 )
 
-func fileStatFromInfoOs(fi os.FileInfo, flags *uint32, fileStat *FileAttr) {
+func fileAttrFromInfoOS(fi os.FileInfo, attr *FileAttr) {
 	// todo
 }

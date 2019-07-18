@@ -168,7 +168,7 @@ func (c *Client) Create(path string) (*File, error) {
 const sftpProtocolVersion = 3 // http://tools.ietf.org/html/draft-ietf-secsh-filexfer-02
 
 func (c *Client) sendInit() error {
-	return c.clientConn.conn.sendPacket(sshFxInitPacket{
+	return c.clientConn.conn.sendPacket(fxpInitPkt{
 		Version: sftpProtocolVersion, // http://tools.ietf.org/html/draft-ietf-secsh-filexfer-02
 	})
 }
@@ -410,7 +410,7 @@ func (c *Client) Chtimes(path string, atime time.Time, mtime time.Time) error {
 		Mtime uint32
 	}
 	attrs := times{uint32(atime.Unix()), uint32(mtime.Unix())}
-	return c.setstat(path, sftpAttrFlagAcModTime, attrs)
+	return c.setstat(path, attrFlagAcModTime, attrs)
 }
 
 // Chown changes the user and group owners of the named file.
@@ -420,12 +420,12 @@ func (c *Client) Chown(path string, uid, gid int) error {
 		GID uint32
 	}
 	attrs := owner{uint32(uid), uint32(gid)}
-	return c.setstat(path, sftpAttrFlagUIDGID, attrs)
+	return c.setstat(path, attrFlagUIDGID, attrs)
 }
 
 // Chmod changes the permissions of the named file.
 func (c *Client) Chmod(path string, mode os.FileMode) error {
-	return c.setstat(path, sftpAttrFlagPermissions, uint32(mode))
+	return c.setstat(path, attrFlagPermissions, uint32(mode))
 }
 
 // Truncate sets the size of the named file. Although it may be safely assumed
@@ -433,7 +433,7 @@ func (c *Client) Chmod(path string, mode os.FileMode) error {
 // the SFTP protocol does not specify what behavior the server should do when setting
 // size greater than the current size.
 func (c *Client) Truncate(path string, size int64) error {
-	return c.setstat(path, sftpAttrFlagSize, uint64(size))
+	return c.setstat(path, attrFlagSize, uint64(size))
 }
 
 // Open opens the named file for reading. If successful, methods on the
@@ -452,7 +452,7 @@ func (c *Client) OpenFile(path string, f int) (*File, error) {
 
 func (c *Client) open(path string, pflags uint32) (*File, error) {
 	id := c.nextID()
-	typ, data, err := c.sendPacket(sshFxpOpenPacket{
+	typ, data, err := c.sendPacket(fxpOpenPkt{
 		ID:     id,
 		Path:   path,
 		Pflags: pflags,
@@ -480,7 +480,7 @@ func (c *Client) open(path string, pflags uint32) (*File, error) {
 // immediately after this request has been sent.
 func (c *Client) close(handle string) error {
 	id := c.nextID()
-	typ, data, err := c.sendPacket(sshFxpClosePacket{
+	typ, data, err := c.sendPacket(fxpClosePkt{
 		ID:     id,
 		Handle: handle,
 	})
@@ -817,7 +817,7 @@ func (f *File) Read(b []byte) (int, error) {
 
 	sendReq := func(b []byte, offset uint64) {
 		reqID := f.c.nextID()
-		f.c.dispatchRequest(ch, sshFxpReadPacket{
+		f.c.dispatchRequest(ch, fxpReadPkt{
 			ID:     reqID,
 			Handle: f.handle,
 			Offset: offset,
@@ -918,7 +918,7 @@ func (f *File) WriteTo(w io.Writer) (int64, error) {
 
 	sendReq := func(b []byte, offset uint64) {
 		reqID := f.c.nextID()
-		f.c.dispatchRequest(ch, sshFxpReadPacket{
+		f.c.dispatchRequest(ch, fxpReadPkt{
 			ID:     reqID,
 			Handle: f.handle,
 			Offset: offset,
@@ -1058,7 +1058,7 @@ func (f *File) Write(b []byte) (int, error) {
 		for inFlight < desiredInFlight && len(b) > 0 && firstErr == nil {
 			l := min(len(b), f.c.maxPacket)
 			rb := b[:l]
-			f.c.dispatchRequest(ch, sshFxpWritePacket{
+			f.c.dispatchRequest(ch, fxpWritePkt{
 				ID:     f.c.nextID(),
 				Handle: f.handle,
 				Offset: offset,
@@ -1126,7 +1126,7 @@ func (f *File) ReadFrom(r io.Reader) (int64, error) {
 			if err != nil {
 				firstErr = err
 			}
-			f.c.dispatchRequest(ch, sshFxpWritePacket{
+			f.c.dispatchRequest(ch, fxpWritePkt{
 				ID:     f.c.nextID(),
 				Handle: f.handle,
 				Offset: offset,

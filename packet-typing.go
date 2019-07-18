@@ -46,20 +46,20 @@ func (p sshFxpRemovePacket) getPath() string   { return p.Filename }
 func (p sshFxpRenamePacket) getPath() string   { return p.Oldpath }
 func (p sshFxpSymlinkPacket) getPath() string  { return p.Targetpath }
 func (p sshFxpOpendirPacket) getPath() string  { return p.Path }
-func (p sshFxpOpenPacket) getPath() string     { return p.Path }
+func (p fxpOpenPkt) getPath() string     { return p.Path }
 
 func (p sshFxpExtendedPacketPosixRename) getPath() string { return p.Oldpath }
 
 // hasHandle
 func (p sshFxpFstatPacket) getHandle() string    { return p.Handle }
 func (p sshFxpFsetstatPacket) getHandle() string { return p.Handle }
-func (p sshFxpReadPacket) getHandle() string     { return p.Handle }
-func (p sshFxpWritePacket) getHandle() string    { return p.Handle }
+func (p fxpReadPkt) getHandle() string     { return p.Handle }
+func (p fxpWritePkt) getHandle() string    { return p.Handle }
 func (p sshFxpReaddirPacket) getHandle() string  { return p.Handle }
-func (p sshFxpClosePacket) getHandle() string    { return p.Handle }
+func (p fxpClosePkt) getHandle() string    { return p.Handle }
 
 // notReadOnly
-func (p sshFxpWritePacket) notReadOnly()               {}
+func (p fxpWritePkt) notReadOnly()               {}
 func (p sshFxpSetstatPacket) notReadOnly()             {}
 func (p sshFxpFsetstatPacket) notReadOnly()            {}
 func (p sshFxpRemovePacket) notReadOnly()              {}
@@ -76,7 +76,7 @@ func (p sshFxpStatResponse) id() uint32 { return p.ID }
 func (p sshFxpNamePacket) id() uint32   { return p.ID }
 func (p sshFxpHandlePacket) id() uint32 { return p.ID }
 func (p StatVFS) id() uint32            { return p.ID }
-func (p sshFxVersionPacket) id() uint32 { return 0 }
+func (p fxpVersionPkt) id() uint32 { return 0 }
 
 // take raw incoming packet data and build packet objects
 func makePacket(p rxPacket) (requestPacket, error) {
@@ -84,17 +84,17 @@ func makePacket(p rxPacket) (requestPacket, error) {
 
 	switch p.pktType {
 	case ssh_FXP_INIT:
-		pkt = &sshFxInitPacket{}
+		pkt = &fxpInitPkt{}
 	case ssh_FXP_LSTAT:
 		pkt = &sshFxpLstatPacket{}
 	case ssh_FXP_OPEN:
-		pkt = &sshFxpOpenPacket{}
+		pkt = &fxpOpenPkt{}
 	case ssh_FXP_CLOSE:
-		pkt = &sshFxpClosePacket{}
+		pkt = &fxpClosePkt{}
 	case ssh_FXP_READ:
-		pkt = &sshFxpReadPacket{}
+		pkt = &fxpReadPkt{}
 	case ssh_FXP_WRITE:
-		pkt = &sshFxpWritePacket{}
+		pkt = &fxpWritePkt{}
 	case ssh_FXP_FSTAT:
 		pkt = &sshFxpFstatPacket{}
 	case ssh_FXP_SETSTAT:

@@ -168,9 +168,9 @@ func (rs *RequestServer) packetWorker(
 	for pkt := range pktChan {
 		var rpkt responsePacket
 		switch pkt := pkt.requestPacket.(type) {
-		case *sshFxInitPacket:
-			rpkt = sshFxVersionPacket{Version: sftpProtocolVersion}
-		case *sshFxpClosePacket:
+		case *fxpInitPkt:
+			rpkt = fxpVersionPkt{Version: sftpProtocolVersion}
+		case *fxpClosePkt:
 			handle := pkt.getHandle()
 			rpkt = statusFromError(pkt, rs.closeRequest(handle))
 		case *sshFxpRealpathPacket:
@@ -179,7 +179,7 @@ func (rs *RequestServer) packetWorker(
 			request := requestFromPacket(ctx, pkt)
 			rs.nextRequest(request)
 			rpkt = request.opendir(rs.Handlers, pkt)
-		case *sshFxpOpenPacket:
+		case *fxpOpenPkt:
 			request := requestFromPacket(ctx, pkt)
 			rs.nextRequest(request)
 			rpkt = request.open(rs.Handlers, pkt)

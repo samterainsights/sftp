@@ -8,10 +8,10 @@ import (
 	"syscall"
 )
 
-func fileStatFromInfoOs(fi os.FileInfo, flags *uint32, fileStat *FileAttr) {
-	if statt, ok := fi.Sys().(*syscall.Stat_t); ok {
-		*flags |= sftpAttrFlagUIDGID
-		fileStat.UID = statt.Uid
-		fileStat.GID = statt.Gid
+func fileAttrFromInfoOS(fi os.FileInfo, attr *FileAttr) {
+	if stat, ok := fi.Sys().(*syscall.Stat_t); ok {
+		attr.Flags |= attrFlagUIDGID
+		attr.UID = stat.Uid
+		attr.GID = stat.Gid
 	}
 }

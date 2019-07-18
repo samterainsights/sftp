@@ -21,7 +21,7 @@ type Request struct {
 	// Rmdir, Mkdir, List, Readlink, Symlink
 	Method   string
 	Filepath string
-	Flags    uint32
+	PFlags   pflag
 	Attrs    []byte // convert to sub-struct
 	Target   string // for renames and sym-links
 	handle   string
@@ -47,7 +47,7 @@ func requestFromPacket(ctx context.Context, pkt hasPath) *Request {
 	request.ctx, request.cancelCtx = context.WithCancel(ctx)
 
 	switch p := pkt.(type) {
-	case *sshFxpOpenPacket:
+	case *fxpOpenPkt:
 		request.Flags = p.Pflags
 	case *sshFxpSetstatPacket:
 		request.Flags = p.Flags
@@ -304,10 +304,10 @@ func (r *Request) opendir(h RequestHandler, pkt requestPacket) responsePacket {
 // file data for additional read/write packets
 func packetData(p requestPacket) (data []byte, offset int64, length uint32) {
 	switch p := p.(type) {
-	case *sshFxpReadPacket:
+	case *fxpReadPkt:
 		length = p.Len
 		offset = int64(p.Offset)
-	case *sshFxpWritePacket:
+	case *fxpWritePkt:
 		data = p.Data
 		length = p.Length
 		offset = int64(p.Offset)
@@ -318,7 +318,7 @@ func packetData(p requestPacket) (data []byte, offset int64, length uint32) {
 // init attributes of request object from packet data
 func requestMethod(p requestPacket) (method string) {
 	switch p.(type) {
-	case *sshFxpReadPacket, *sshFxpWritePacket, *sshFxpOpenPacket:
+	case *fxpReadPkt, *fxpWritePkt, *fxpOpenPkt:
 		// set in open() above
 	case *sshFxpOpendirPacket, *sshFxpReaddirPacket:
 		// set in opendir() above

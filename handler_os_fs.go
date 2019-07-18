@@ -128,7 +128,7 @@ func (svr *Server) sftpServerWorker(pktChan chan orderedRequest) error {
 		switch pkt := pkt.requestPacket.(type) {
 		case notReadOnly:
 			readonly = false
-		case *sshFxpOpenPacket:
+		case *fxpOpenPkt:
 			readonly = pkt.readonly()
 		case *sshFxpExtendedPacket:
 			readonly = pkt.readonly()
@@ -153,8 +153,8 @@ func (svr *Server) sftpServerWorker(pktChan chan orderedRequest) error {
 func handlePacket(s *Server, p orderedRequest) error {
 	var rpkt responsePacket
 	switch p := p.requestPacket.(type) {
-	case *sshFxInitPacket:
-		rpkt = sshFxVersionPacket{Version: sftpProtocolVersion}
+	case *fxpInitPkt:
+		rpkt = &fxpVersionPkt{Version: sftpProtocolVersion}
 	case *sshFxpStatPacket:
 		// stat the requested file
 		info, err := os.Stat(p.Path)
@@ -205,7 +205,7 @@ func handlePacket(s *Server, p orderedRequest) error {
 	case *sshFxpSymlinkPacket:
 		err := os.Symlink(p.Targetpath, p.Linkpath)
 		rpkt = statusFromError(p, err)
-	case *sshFxpClosePacket:
+	case *fxpClosePkt:
 		rpkt = statusFromError(p, s.closeHandle(p.Handle))
 	case *sshFxpReadlinkPacket:
 		f, err := os.Readlink(p.Path)
@@ -241,13 +241,13 @@ func handlePacket(s *Server, p orderedRequest) error {
 			rpkt = statusFromError(p, &os.PathError{
 				Path: p.Path, Err: syscall.ENOTDIR})
 		} else {
-			rpkt = sshFxpOpenPacket{
+			rpkt = fxpOpenPkt{
 				ID:     p.ID,
 				Path:   p.Path,
-				Pflags: PFlagRead,
+				Pflags: uint32(PFlagRead),
 			}.respond(s)
 		}
-	case *sshFxpReadPacket:
+	case *fxpReadPkt:
 		var err error = syscall.EBADF
 		f, ok := s.getHandle(p.Handle)
 		if ok {
@@ -267,7 +267,7 @@ func handlePacket(s *Server, p orderedRequest) error {
 			rpkt = statusFromError(p, err)
 		}
 
-	case *sshFxpWritePacket:
+	case *fxpWritePkt:
 		f, ok := s.getHandle(p.Handle)
 		var err error = syscall.EBADF
 		if ok {
@@ -344,36 +344,36 @@ type ider interface {
 }
 
 // The init packet has no ID, so we just return a zero-value ID
-func (p sshFxInitPacket) id() uint32 { return 0 }
+func (p fxpInitPkt) id() uint32 { return 0 }
 
 type sshFxpStatResponse struct {
 	ID   uint32
 	info os.FileInfo
 }
 
-func (p sshFxpStatResponse) MarshalBinary() ([]byte, error) {
+func (p sshFxpStatResponse) /*FIXME(samterainsights): encode length prefix*/ MarshalBinary() ([]byte, error) {
 	b := []byte{ssh_FXP_ATTRS}
 	b = marshalUint32(b, p.ID)
-	b = marshalFileInfo(b, p.info)
+	b = marshalFileAttr(b, p.info)
 	return b, nil
 }
 
 var emptyFileAttr = []interface{}{uint32(0)}
 
-func (p sshFxpOpenPacket) readonly() bool {
+func (p fxpOpenPkt) readonly() bool {
 	return !p.hasPflags(PFlagWrite)
 }
 
-func (p sshFxpOpenPacket) hasPflags(flags ...uint32) bool {
+func (p fxpOpenPkt) hasPflags(flags ...pflag) bool {
 	for _, f := range flags {
-		if p.Pflags&f == 0 {
+		if p.Pflags&uint32(f) == 0 {
 			return false
 		}
 	}
 	return true
 }
 
-func (p sshFxpOpenPacket) respond(svr *Server) responsePacket {
+func (p fxpOpenPkt) respond(svr *Server) responsePacket {
 	var osFlags int
 	if p.hasPflags(PFlagRead, PFlagWrite) {
 		osFlags |= os.O_RDWR
@@ -437,19 +437,19 @@ func (p sshFxpSetstatPacket) respond(svr *Server) responsePacket {
 	var err error
 
 	debug("setstat name \"%s\"", p.Path)
-	if (p.Flags & sftpAttrFlagSize) != 0 {
+	if (p.Flags & attrFlagSize) != 0 {
 		var size uint64
 		if size, b, err = unmarshalUint64Safe(b); err == nil {
 			err = os.Truncate(p.Path, int64(size))
 		}
 	}
-	if (p.Flags & sftpAttrFlagPermissions) != 0 {
+	if (p.Flags & attrFlagPermissions) != 0 {
 		var mode uint32
 		if mode, b, err = unmarshalUint32Safe(b); err == nil {
 			err = os.Chmod(p.Path, os.FileMode(mode))
 		}
 	}
-	if (p.Flags & sftpAttrFlagAcModTime) != 0 {
+	if (p.Flags & attrFlagAcModTime) != 0 {
 		var atime uint32
 		var mtime uint32
 		if atime, b, err = unmarshalUint32Safe(b); err != nil {
@@ -460,7 +460,7 @@ func (p sshFxpSetstatPacket) respond(svr *Server) responsePacket {
 			err = os.Chtimes(p.Path, atimeT, mtimeT)
 		}
 	}
-	if (p.Flags & sftpAttrFlagUIDGID) != 0 {
+	if (p.Flags & attrFlagUIDGID) != 0 {
 		var uid uint32
 		var gid uint32
 		if uid, b, err = unmarshalUint32Safe(b); err != nil {
@@ -484,19 +484,19 @@ func (p sshFxpFsetstatPacket) respond(svr *Server) responsePacket {
 	var err error
 
 	debug("fsetstat name \"%s\"", f.Name())
-	if (p.Flags & sftpAttrFlagSize) != 0 {
+	if (p.Flags & attrFlagSize) != 0 {
 		var size uint64
 		if size, b, err = unmarshalUint64Safe(b); err == nil {
 			err = f.Truncate(int64(size))
 		}
 	}
-	if (p.Flags & sftpAttrFlagPermissions) != 0 {
+	if (p.Flags & attrFlagPermissions) != 0 {
 		var mode uint32
 		if mode, b, err = unmarshalUint32Safe(b); err == nil {
 			err = f.Chmod(os.FileMode(mode))
 		}
 	}
-	if (p.Flags & sftpAttrFlagAcModTime) != 0 {
+	if (p.Flags & attrFlagAcModTime) != 0 {
 		var atime uint32
 		var mtime uint32
 		if atime, b, err = unmarshalUint32Safe(b); err != nil {
@@ -507,7 +507,7 @@ func (p sshFxpFsetstatPacket) respond(svr *Server) responsePacket {
 			err = os.Chtimes(f.Name(), atimeT, mtimeT)
 		}
 	}
-	if (p.Flags & sftpAttrFlagUIDGID) != 0 {
+	if (p.Flags & attrFlagUIDGID) != 0 {
 		var uid uint32
 		var gid uint32
 		if uid, b, err = unmarshalUint32Safe(b); err != nil {

@@ -118,11 +118,11 @@ func (s *packetManager) workerChan(runWorker func(chan orderedRequest),
 	go func() {
 		for pkt := range pktChan {
 			switch pkt.requestPacket.(type) {
-			case *sshFxpReadPacket, *sshFxpWritePacket:
+			case *fxpReadPkt, *fxpWritePkt:
 				s.incomingPacket(pkt)
 				rwChan <- pkt
 				continue
-			case *sshFxpClosePacket:
+			case *fxpClosePkt:
 				// wait for reads/writes to finish when file is closed
 				// incomingPacket() call must occur after this
 				s.working.Wait()
