@@ -65,9 +65,9 @@ func testRequest(method string) *Request {
 	var flags uint32
 	switch method {
 	case "Get":
-		flags = flags | ssh_FXF_READ
+		flags = flags | PFlagRead
 	case "Put":
-		flags = flags | ssh_FXF_WRITE
+		flags = flags | PFlagWrite
 	}
 	request := &Request{
 		Filepath: "./request_test.go",

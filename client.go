@@ -233,7 +233,7 @@ func (c *Client) ReadDir(p string) ([]os.FileInfo, error) {
 				filename, data = unmarshalString(data)
 				_, data = unmarshalString(data) // discard longname
 				var attr *FileStat
-				attr, data = unmarshalAttrs(data)
+				attr, data, err = unmarshalFileAttrSafe(data)
 				if filename == "." || filename == ".." {
 					continue
 				}
@@ -1260,24 +1260,24 @@ func flags(f int) uint32 {
 	var out uint32
 	switch f & os.O_WRONLY {
 	case os.O_WRONLY:
-		out |= ssh_FXF_WRITE
+		out |= PFlagWrite
 	case os.O_RDONLY:
-		out |= ssh_FXF_READ
+		out |= PFlagRead
 	}
 	if f&os.O_RDWR == os.O_RDWR {
-		out |= ssh_FXF_READ | ssh_FXF_WRITE
+		out |= PFlagRead | PFlagWrite
 	}
 	if f&os.O_APPEND == os.O_APPEND {
-		out |= ssh_FXF_APPEND
+		out |= PFlagAppend
 	}
 	if f&os.O_CREATE == os.O_CREATE {
-		out |= ssh_FXF_CREAT
+		out |= PFlagCreate
 	}
 	if f&os.O_TRUNC == os.O_TRUNC {
-		out |= ssh_FXF_TRUNC
+		out |= PFlagTruncate
 	}
 	if f&os.O_EXCL == os.O_EXCL {
-		out |= ssh_FXF_EXCL
+		out |= PFlagExclusive
 	}
 	return out
 }

@@ -81,11 +81,6 @@ func fileStatFromInfo(fi os.FileInfo) (uint32, FileStat) {
 	return flags, fileStat
 }
 
-func unmarshalAttrs(b []byte) (*FileStat, []byte) {
-	flags, b := unmarshalUint32(b)
-	return getFileStat(flags, b)
-}
-
 func marshalFileInfo(b []byte, fi os.FileInfo) []byte {
 	// attributes variable struct, and also variable per protocol version
 	// spec version 3 attributes:

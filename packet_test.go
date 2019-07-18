@@ -219,15 +219,15 @@ func TestSSHFxpOpenPacketreadonly(t *testing.T) {
 		ok     bool
 	}{
 		{
-			pflags: ssh_FXF_READ,
+			pflags: PFlagRead,
 			ok:     true,
 		},
 		{
-			pflags: ssh_FXF_WRITE,
+			pflags: PFlagWrite,
 			ok:     false,
 		},
 		{
-			pflags: ssh_FXF_READ | ssh_FXF_WRITE,
+			pflags: PFlagRead | PFlagWrite,
 			ok:     false,
 		},
 	}
@@ -253,32 +253,32 @@ func TestSSHFxpOpenPackethasPflags(t *testing.T) {
 	}{
 		{
 			desc:      "have read, test against write",
-			haveFlags: ssh_FXF_READ,
-			testFlags: []uint32{ssh_FXF_WRITE},
+			haveFlags: PFlagRead,
+			testFlags: []uint32{PFlagWrite},
 			ok:        false,
 		},
 		{
 			desc:      "have write, test against read",
-			haveFlags: ssh_FXF_WRITE,
-			testFlags: []uint32{ssh_FXF_READ},
+			haveFlags: PFlagWrite,
+			testFlags: []uint32{PFlagRead},
 			ok:        false,
 		},
 		{
 			desc:      "have read+write, test against read",
-			haveFlags: ssh_FXF_READ | ssh_FXF_WRITE,
-			testFlags: []uint32{ssh_FXF_READ},
+			haveFlags: PFlagRead | PFlagWrite,
+			testFlags: []uint32{PFlagRead},
 			ok:        true,
 		},
 		{
 			desc:      "have read+write, test against write",
-			haveFlags: ssh_FXF_READ | ssh_FXF_WRITE,
-			testFlags: []uint32{ssh_FXF_WRITE},
+			haveFlags: PFlagRead | PFlagWrite,
+			testFlags: []uint32{PFlagWrite},
 			ok:        true,
 		},
 		{
 			desc:      "have read+write, test against read+write",
-			haveFlags: ssh_FXF_READ | ssh_FXF_WRITE,
-			testFlags: []uint32{ssh_FXF_READ, ssh_FXF_WRITE},
+			haveFlags: PFlagRead | PFlagWrite,
+			testFlags: []uint32{PFlagRead, PFlagWrite},
 			ok:        true,
 		},
 	}

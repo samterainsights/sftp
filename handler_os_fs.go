@@ -244,7 +244,7 @@ func handlePacket(s *Server, p orderedRequest) error {
 			rpkt = sshFxpOpenPacket{
 				ID:     p.ID,
 				Path:   p.Path,
-				Pflags: ssh_FXF_READ,
+				Pflags: PFlagRead,
 			}.respond(s)
 		}
 	case *sshFxpReadPacket:
@@ -361,7 +361,7 @@ func (p sshFxpStatResponse) MarshalBinary() ([]byte, error) {
 var emptyFileStat = []interface{}{uint32(0)}
 
 func (p sshFxpOpenPacket) readonly() bool {
-	return !p.hasPflags(ssh_FXF_WRITE)
+	return !p.hasPflags(PFlagWrite)
 }
 
 func (p sshFxpOpenPacket) hasPflags(flags ...uint32) bool {
@@ -375,27 +375,27 @@ func (p sshFxpOpenPacket) hasPflags(flags ...uint32) bool {
 
 func (p sshFxpOpenPacket) respond(svr *Server) responsePacket {
 	var osFlags int
-	if p.hasPflags(ssh_FXF_READ, ssh_FXF_WRITE) {
+	if p.hasPflags(PFlagRead, PFlagWrite) {
 		osFlags |= os.O_RDWR
-	} else if p.hasPflags(ssh_FXF_WRITE) {
+	} else if p.hasPflags(PFlagWrite) {
 		osFlags |= os.O_WRONLY
-	} else if p.hasPflags(ssh_FXF_READ) {
+	} else if p.hasPflags(PFlagRead) {
 		osFlags |= os.O_RDONLY
 	} else {
 		// how are they opening?
 		return statusFromError(p, syscall.EINVAL)
 	}
 
-	if p.hasPflags(ssh_FXF_APPEND) {
+	if p.hasPflags(PFlagAppend) {
 		osFlags |= os.O_APPEND
 	}
-	if p.hasPflags(ssh_FXF_CREAT) {
+	if p.hasPflags(PFlagCreate) {
 		osFlags |= os.O_CREATE
 	}
-	if p.hasPflags(ssh_FXF_TRUNC) {
+	if p.hasPflags(PFlagTruncate) {
 		osFlags |= os.O_TRUNC
 	}
-	if p.hasPflags(ssh_FXF_EXCL) {
+	if p.hasPflags(PFlagExclusive) {
 		osFlags |= os.O_EXCL
 	}
 

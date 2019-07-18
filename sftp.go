@@ -76,13 +76,30 @@ const (
 	ssh_FX_NO_MATCHING_BYTE_RANGE_LOCK = 31
 )
 
+// Bit flags for opening files (SSH_FXP_OPEN).
+// https://tools.ietf.org/html/draft-ietf-secsh-filexfer-02#section-6.3
+type pflag uint32
+
 const (
-	ssh_FXF_READ   = 0x00000001
-	ssh_FXF_WRITE  = 0x00000002
-	ssh_FXF_APPEND = 0x00000004
-	ssh_FXF_CREAT  = 0x00000008
-	ssh_FXF_TRUNC  = 0x00000010
-	ssh_FXF_EXCL   = 0x00000020
+	// PFlagRead means open the file for reading. This may be
+	// used in combination with PFlagWrite.
+	PFlagRead = pflag(1 << iota)
+	// PFlagWrite means open the file for writing. This may be
+	// used in combination with PFlagRead.
+	PFlagWrite
+	// PFlagAppend forces all writes to append data to the end of
+	// any existing file (overrides PFlagTruncate).
+	PFlagAppend
+	// PFlagCreate means the file should be created if it does not
+	// already exist.
+	PFlagCreate
+	// PFlagTruncate means an existing file must be truncated, i.e.
+	// begin writing at index 0 and overwrite existing data. If this
+	// flag is present, PFlagCreate MUST also be specified.
+	PFlagTruncate
+	// PFlagExclusive means the request should fail if the file
+	// already exists.
+	PFlagExclusive
 )
 
 type fxp uint8

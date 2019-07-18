@@ -24,7 +24,8 @@ var (
 type FileAttr struct {
 	Flags           uint32
 	Size            uint64
-	UID, GID, Perms uint32
+	UID, GID        uint32
+	Perms           os.FileMode
 	AcTime, ModTime time.Time
 	Extensions      []StatExtended
 }
@@ -139,9 +140,11 @@ func unmarshalFileAttrSafe(b []byte) (_ *FileAttr, _ []byte, err error) {
 		}
 	}
 	if attr.Flags&sftpAttrFlagPermissions != 0 {
-		if attr.Perms, b, err = unmarshalUint32Safe(b); err != nil {
+		var perms uint32
+		if perms, b, err = unmarshalUint32Safe(b); err != nil {
 			return
 		}
+		attr.Perms = toFileMode(perms)
 	}
 	if attr.Flags&sftpAttrFlagAcModTime != 0 {
 		var atime, mtime uint32
@@ -568,7 +571,7 @@ func (p *sshFxpOpenPacket) UnmarshalBinary(b []byte) (err error) {
 	if p.Pflags, b, err = unmarshalUint32Safe(b); err != nil {
 		return
 	}
-	if p.Attr, _, err = unmarshalFileAttrSafe(b); err != nil {
+	if p.Attr, b, err = unmarshalFileAttrSafe(b); err != nil {
 		return
 	}
 	return

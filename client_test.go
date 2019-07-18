@@ -72,11 +72,11 @@ var flagsTests = []struct {
 	flags int
 	want  uint32
 }{
-	{os.O_RDONLY, ssh_FXF_READ},
-	{os.O_WRONLY, ssh_FXF_WRITE},
-	{os.O_RDWR, ssh_FXF_READ | ssh_FXF_WRITE},
-	{os.O_RDWR | os.O_CREATE | os.O_TRUNC, ssh_FXF_READ | ssh_FXF_WRITE | ssh_FXF_CREAT | ssh_FXF_TRUNC},
-	{os.O_WRONLY | os.O_APPEND, ssh_FXF_WRITE | ssh_FXF_APPEND},
+	{os.O_RDONLY, PFlagRead},
+	{os.O_WRONLY, PFlagWrite},
+	{os.O_RDWR, PFlagRead | PFlagWrite},
+	{os.O_RDWR | os.O_CREATE | os.O_TRUNC, PFlagRead | PFlagWrite | PFlagCreate | PFlagTruncate},
+	{os.O_WRONLY | os.O_APPEND, PFlagWrite | PFlagAppend},
 }
 
 func TestFlags(t *testing.T) {
