@@ -212,7 +212,7 @@ func (c *Client) ReadDir(p string) ([]os.FileInfo, error) {
 	var done = false
 	for !done {
 		id := c.nextID()
-		typ, data, err1 := c.sendPacket(sshFxpReaddirPacket{
+		typ, data, err1 := c.sendPacket(fxpReaddirPkt{
 			ID:     id,
 			Handle: handle,
 		})
@@ -255,7 +255,7 @@ func (c *Client) ReadDir(p string) ([]os.FileInfo, error) {
 
 func (c *Client) opendir(path string) (string, error) {
 	id := c.nextID()
-	typ, data, err := c.sendPacket(sshFxpOpendirPacket{
+	typ, data, err := c.sendPacket(fxpOpendirPkt{
 		ID:   id,
 		Path: path,
 	})
@@ -281,7 +281,7 @@ func (c *Client) opendir(path string) (string, error) {
 // If 'p' is a symbolic link, the returned FileInfo structure describes the referent file.
 func (c *Client) Stat(p string) (os.FileInfo, error) {
 	id := c.nextID()
-	typ, data, err := c.sendPacket(sshFxpStatPacket{
+	typ, data, err := c.sendPacket(fxpStatPkt{
 		ID:   id,
 		Path: p,
 	})
@@ -310,7 +310,7 @@ func (c *Client) Stat(p string) (os.FileInfo, error) {
 // If 'p' is a symbolic link, the returned FileInfo structure describes the symbolic link.
 func (c *Client) Lstat(p string) (os.FileInfo, error) {
 	id := c.nextID()
-	typ, data, err := c.sendPacket(sshFxpLstatPacket{
+	typ, data, err := c.sendPacket(fxpLstatPkt{
 		ID:   id,
 		Path: p,
 	})
@@ -338,7 +338,7 @@ func (c *Client) Lstat(p string) (os.FileInfo, error) {
 // ReadLink reads the target of a symbolic link.
 func (c *Client) ReadLink(p string) (string, error) {
 	id := c.nextID()
-	typ, data, err := c.sendPacket(sshFxpReadlinkPacket{
+	typ, data, err := c.sendPacket(fxpReadlinkPkt{
 		ID:   id,
 		Path: p,
 	})
@@ -367,7 +367,7 @@ func (c *Client) ReadLink(p string) (string, error) {
 // Symlink creates a symbolic link at 'newname', pointing at target 'oldname'
 func (c *Client) Symlink(oldname, newname string) error {
 	id := c.nextID()
-	typ, data, err := c.sendPacket(sshFxpSymlinkPacket{
+	typ, data, err := c.sendPacket(fxpSymlinkPkt{
 		ID:         id,
 		Linkpath:   newname,
 		Targetpath: oldname,
@@ -386,7 +386,7 @@ func (c *Client) Symlink(oldname, newname string) error {
 // setstat is a convience wrapper to allow for changing of various parts of the file descriptor.
 func (c *Client) setstat(path string, flags uint32, attrs interface{}) error {
 	id := c.nextID()
-	typ, data, err := c.sendPacket(sshFxpSetstatPacket{
+	typ, data, err := c.sendPacket(fxpSetstatPkt{
 		ID:    id,
 		Path:  path,
 		Flags: flags,
@@ -497,7 +497,7 @@ func (c *Client) close(handle string) error {
 
 func (c *Client) fstat(handle string) (*FileAttr, error) {
 	id := c.nextID()
-	typ, data, err := c.sendPacket(sshFxpFstatPacket{
+	typ, data, err := c.sendPacket(fxpFstatPkt{
 		ID:     id,
 		Handle: handle,
 	})
@@ -580,7 +580,7 @@ func (c *Client) Remove(path string) error {
 
 func (c *Client) removeFile(path string) error {
 	id := c.nextID()
-	typ, data, err := c.sendPacket(sshFxpRemovePacket{
+	typ, data, err := c.sendPacket(fxpRemovePkt{
 		ID:       id,
 		Filename: path,
 	})
@@ -598,7 +598,7 @@ func (c *Client) removeFile(path string) error {
 // RemoveDirectory removes a directory path.
 func (c *Client) RemoveDirectory(path string) error {
 	id := c.nextID()
-	typ, data, err := c.sendPacket(sshFxpRmdirPacket{
+	typ, data, err := c.sendPacket(fxpRmdirPkt{
 		ID:   id,
 		Path: path,
 	})
@@ -616,7 +616,7 @@ func (c *Client) RemoveDirectory(path string) error {
 // Rename renames a file.
 func (c *Client) Rename(oldname, newname string) error {
 	id := c.nextID()
-	typ, data, err := c.sendPacket(sshFxpRenamePacket{
+	typ, data, err := c.sendPacket(fxpRenamePkt{
 		ID:      id,
 		Oldpath: oldname,
 		Newpath: newname,
@@ -654,7 +654,7 @@ func (c *Client) PosixRename(oldname, newname string) error {
 
 func (c *Client) realpath(path string) (string, error) {
 	id := c.nextID()
-	typ, data, err := c.sendPacket(sshFxpRealpathPacket{
+	typ, data, err := c.sendPacket(fxpRealpathPkt{
 		ID:   id,
 		Path: path,
 	})
@@ -691,7 +691,7 @@ func (c *Client) Getwd() (string, error) {
 // parent folder does not exist (the method cannot create complete paths).
 func (c *Client) Mkdir(path string) error {
 	id := c.nextID()
-	typ, data, err := c.sendPacket(sshFxpMkdirPacket{
+	typ, data, err := c.sendPacket(fxpMkdirPkt{
 		ID:   id,
 		Path: path,
 	})
@@ -1254,13 +1254,6 @@ func unmarshalStatus(id uint32, data []byte) error {
 		msg:  msg,
 		lang: lang,
 	}
-}
-
-func marshalStatus(b []byte, err StatusError) []byte {
-	b = marshalUint32(b, err.Code)
-	b = marshalString(b, err.msg)
-	b = marshalString(b, err.lang)
-	return b
 }
 
 // flags converts the flags passed to OpenFile into ssh flags.

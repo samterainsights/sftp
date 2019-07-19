@@ -155,33 +155,33 @@ func handlePacket(s *Server, p orderedRequest) error {
 	switch p := p.requestPacket.(type) {
 	case *fxpInitPkt:
 		rpkt = &fxpVersionPkt{Version: sftpProtocolVersion}
-	case *sshFxpStatPacket:
+	case *fxpStatPkt:
 		// stat the requested file
 		info, err := os.Stat(p.Path)
-		rpkt = sshFxpStatResponse{
+		rpkt = fxpAttrPkt{
 			ID:   p.ID,
 			info: info,
 		}
 		if err != nil {
 			rpkt = statusFromError(p, err)
 		}
-	case *sshFxpLstatPacket:
+	case *fxpLstatPkt:
 		// stat the requested file
 		info, err := os.Lstat(p.Path)
-		rpkt = sshFxpStatResponse{
+		rpkt = fxpAttrPkt{
 			ID:   p.ID,
 			info: info,
 		}
 		if err != nil {
 			rpkt = statusFromError(p, err)
 		}
-	case *sshFxpFstatPacket:
+	case *fxpFstatPkt:
 		f, ok := s.getHandle(p.Handle)
 		var err error = syscall.EBADF
 		var info os.FileInfo
 		if ok {
 			info, err = f.Stat()
-			rpkt = sshFxpStatResponse{
+			rpkt = fxpAttrPkt{
 				ID:   p.ID,
 				info: info,
 			}
@@ -189,29 +189,29 @@ func handlePacket(s *Server, p orderedRequest) error {
 		if err != nil {
 			rpkt = statusFromError(p, err)
 		}
-	case *sshFxpMkdirPacket:
+	case *fxpMkdirPkt:
 		// TODO FIXME: ignore flags field
 		err := os.Mkdir(p.Path, 0755)
 		rpkt = statusFromError(p, err)
-	case *sshFxpRmdirPacket:
+	case *fxpRmdirPkt:
 		err := os.Remove(p.Path)
 		rpkt = statusFromError(p, err)
-	case *sshFxpRemovePacket:
+	case *fxpRemovePkt:
 		err := os.Remove(p.Filename)
 		rpkt = statusFromError(p, err)
-	case *sshFxpRenamePacket:
+	case *fxpRenamePkt:
 		err := os.Rename(p.Oldpath, p.Newpath)
 		rpkt = statusFromError(p, err)
-	case *sshFxpSymlinkPacket:
+	case *fxpSymlinkPkt:
 		err := os.Symlink(p.Targetpath, p.Linkpath)
 		rpkt = statusFromError(p, err)
 	case *fxpClosePkt:
 		rpkt = statusFromError(p, s.closeHandle(p.Handle))
-	case *sshFxpReadlinkPacket:
+	case *fxpReadlinkPkt:
 		f, err := os.Readlink(p.Path)
-		rpkt = sshFxpNamePacket{
+		rpkt = fxpNamePkt{
 			ID: p.ID,
-			NameAttrs: []sshFxpNameAttr{{
+			NameAttrs: []fxpNamePktItem{{
 				Name:     f,
 				LongName: f,
 				Attrs:    emptyFileAttr,
@@ -220,12 +220,12 @@ func handlePacket(s *Server, p orderedRequest) error {
 		if err != nil {
 			rpkt = statusFromError(p, err)
 		}
-	case *sshFxpRealpathPacket:
+	case *fxpRealpathPkt:
 		f, err := filepath.Abs(p.Path)
 		f = cleanPath(f)
-		rpkt = sshFxpNamePacket{
+		rpkt = fxpNamePkt{
 			ID: p.ID,
-			NameAttrs: []sshFxpNameAttr{{
+			NameAttrs: []fxpNamePktItem{{
 				Name:     f,
 				LongName: f,
 				Attrs:    emptyFileAttr,
@@ -234,7 +234,7 @@ func handlePacket(s *Server, p orderedRequest) error {
 		if err != nil {
 			rpkt = statusFromError(p, err)
 		}
-	case *sshFxpOpendirPacket:
+	case *fxpOpendirPkt:
 		if stat, err := os.Stat(p.Path); err != nil {
 			rpkt = statusFromError(p, err)
 		} else if !stat.IsDir() {
@@ -257,7 +257,7 @@ func handlePacket(s *Server, p orderedRequest) error {
 			if _err != nil && (_err != io.EOF || n == 0) {
 				err = _err
 			}
-			rpkt = sshFxpDataPacket{
+			rpkt = fxpDataPkt{
 				ID:     p.ID,
 				Length: uint32(n),
 				Data:   data[:n],
@@ -346,18 +346,6 @@ type ider interface {
 // The init packet has no ID, so we just return a zero-value ID
 func (p fxpInitPkt) id() uint32 { return 0 }
 
-type sshFxpStatResponse struct {
-	ID   uint32
-	info os.FileInfo
-}
-
-func (p sshFxpStatResponse) /*FIXME(samterainsights): encode length prefix*/ MarshalBinary() ([]byte, error) {
-	b := []byte{ssh_FXP_ATTRS}
-	b = marshalUint32(b, p.ID)
-	b = marshalFileAttr(b, p.info)
-	return b, nil
-}
-
 var emptyFileAttr = []interface{}{uint32(0)}
 
 func (p fxpOpenPkt) readonly() bool {
@@ -405,10 +393,10 @@ func (p fxpOpenPkt) respond(svr *Server) responsePacket {
 	}
 
 	handle := svr.nextHandle(f)
-	return sshFxpHandlePacket{ID: p.id(), Handle: handle}
+	return fxpHandlePkt{ID: p.id(), Handle: handle}
 }
 
-func (p sshFxpReaddirPacket) respond(svr *Server) responsePacket {
+func (p fxpReaddirPkt) respond(svr *Server) responsePacket {
 	f, ok := svr.getHandle(p.Handle)
 	if !ok {
 		return statusFromError(p, syscall.EBADF)
@@ -420,9 +408,9 @@ func (p sshFxpReaddirPacket) respond(svr *Server) responsePacket {
 		return statusFromError(p, err)
 	}
 
-	ret := sshFxpNamePacket{ID: p.ID}
+	ret := fxpNamePkt{ID: p.ID}
 	for _, dirent := range dirents {
-		ret.NameAttrs = append(ret.NameAttrs, sshFxpNameAttr{
+		ret.NameAttrs = append(ret.NameAttrs, fxpNamePktItem{
 			Name:     dirent.Name(),
 			LongName: runLs(dirname, dirent),
 			Attrs:    []interface{}{dirent},
@@ -431,7 +419,7 @@ func (p sshFxpReaddirPacket) respond(svr *Server) responsePacket {
 	return ret
 }
 
-func (p sshFxpSetstatPacket) respond(svr *Server) responsePacket {
+func (p fxpSetstatPkt) respond(svr *Server) responsePacket {
 	// additional unmarshalling is required for each possibility here
 	b := p.Attrs.([]byte)
 	var err error
@@ -473,7 +461,7 @@ func (p sshFxpSetstatPacket) respond(svr *Server) responsePacket {
 	return statusFromError(p, err)
 }
 
-func (p sshFxpFsetstatPacket) respond(svr *Server) responsePacket {
+func (p fxpFsetstatPkt) respond(svr *Server) responsePacket {
 	f, ok := svr.getHandle(p.Handle)
 	if !ok {
 		return statusFromError(p, syscall.EBADF)
@@ -534,8 +522,8 @@ func translateErrno(errno syscall.Errno) uint32 {
 	return ssh_FX_FAILURE
 }
 
-func statusFromError(p ider, err error) sshFxpStatusPacket {
-	ret := sshFxpStatusPacket{
+func statusFromError(p ider, err error) fxpStatusPkt {
+	ret := fxpStatusPkt{
 		ID: p.id(),
 		StatusError: StatusError{
 			// ssh_FX_OK                = 0

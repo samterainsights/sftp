@@ -113,7 +113,7 @@ func TestPacketManager(t *testing.T) {
 	s.close()
 }
 
-func (p sshFxpRemovePacket) String() string {
+func (p fxpRemovePkt) String() string {
 	return fmt.Sprintf("RmPkt:%d", p.ID)
 }
 func (p fxpOpenPkt) String() string {

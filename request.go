@@ -49,12 +49,12 @@ func requestFromPacket(ctx context.Context, pkt hasPath) *Request {
 	switch p := pkt.(type) {
 	case *fxpOpenPkt:
 		request.Flags = p.Pflags
-	case *sshFxpSetstatPacket:
+	case *fxpSetstatPkt:
 		request.Flags = p.Flags
 		request.Attrs = p.Attrs.([]byte)
-	case *sshFxpRenamePacket:
+	case *fxpRenamePkt:
 		request.Target = cleanPath(p.Newpath)
-	case *sshFxpSymlinkPacket:
+	case *fxpSymlinkPkt:
 		request.Target = cleanPath(p.Linkpath)
 	}
 	return request
@@ -169,7 +169,7 @@ func (r *Request) call(h RequestHandler, pkt requestPacket) responsePacket {
 		if err != nil && (err != io.EOF || n == 0) {
 			return statusFromError(pkt, err)
 		}
-		return &sshFxpDataPacket{
+		return &fxpDataPkt{
 			ID:     pkt.id(),
 			Length: uint32(n),
 			Data:   data[:n],
@@ -188,7 +188,7 @@ func (r *Request) call(h RequestHandler, pkt requestPacket) responsePacket {
 		return statusFromError(pkt, err)
 
 	case "Setstat":
-		if p, ok := pkt.(*sshFxpFsetstatPacket); ok {
+		if p, ok := pkt.(*fxpFsetstatPkt); ok {
 			r.Flags = p.Flags
 			r.Attrs = p.Attrs.([]byte)
 		}
@@ -230,10 +230,10 @@ func (r *Request) call(h RequestHandler, pkt requestPacket) responsePacket {
 			return statusFromError(pkt, io.EOF)
 		}
 		dirname := filepath.ToSlash(path.Base(r.Filepath))
-		ret := &sshFxpNamePacket{ID: pkt.id()}
+		ret := &fxpNamePkt{ID: pkt.id()}
 
 		for _, fi := range finfo {
-			ret.NameAttrs = append(ret.NameAttrs, sshFxpNameAttr{
+			ret.NameAttrs = append(ret.NameAttrs, fxpNamePktItem{
 				Name:     fi.Name(),
 				LongName: runLs(dirname, fi),
 				Attrs:    []interface{}{fi},
@@ -246,7 +246,7 @@ func (r *Request) call(h RequestHandler, pkt requestPacket) responsePacket {
 		if err != nil {
 			return statusFromError(pkt, err)
 		}
-		return &sshFxpStatResponse{pkt.id(), info}
+		return &fxpAttrPkt{pkt.id(), info}
 
 	case "Readlink":
 		info, err := h.ReadLink(r)
@@ -254,9 +254,9 @@ func (r *Request) call(h RequestHandler, pkt requestPacket) responsePacket {
 			return statusFromError(pkt, err)
 		}
 		filename := info.Name()
-		return &sshFxpNamePacket{
+		return &fxpNamePkt{
 			ID: pkt.id(),
-			NameAttrs: []sshFxpNameAttr{{
+			NameAttrs: []fxpNamePktItem{{
 				Name:     filename,
 				LongName: filename,
 				Attrs:    emptyFileAttr,
@@ -285,7 +285,7 @@ func (r *Request) open(h RequestHandler, pkt requestPacket) responsePacket {
 	if err != nil {
 		return statusFromError(pkt, err)
 	}
-	return &sshFxpHandlePacket{ID: pkt.id(), Handle: r.handle}
+	return &fxpHandlePkt{ID: pkt.id(), Handle: r.handle}
 }
 func (r *Request) opendir(h RequestHandler, pkt requestPacket) responsePacket {
 	var err error
@@ -298,7 +298,7 @@ func (r *Request) opendir(h RequestHandler, pkt requestPacket) responsePacket {
 		}
 		return statusFromError(pkt, err)
 	}
-	return &sshFxpHandlePacket{ID: pkt.id(), Handle: r.handle}
+	return &fxpHandlePkt{ID: pkt.id(), Handle: r.handle}
 }
 
 // file data for additional read/write packets
@@ -320,23 +320,23 @@ func requestMethod(p requestPacket) (method string) {
 	switch p.(type) {
 	case *fxpReadPkt, *fxpWritePkt, *fxpOpenPkt:
 		// set in open() above
-	case *sshFxpOpendirPacket, *sshFxpReaddirPacket:
+	case *fxpOpendirPkt, *fxpReaddirPkt:
 		// set in opendir() above
-	case *sshFxpSetstatPacket, *sshFxpFsetstatPacket:
+	case *fxpSetstatPkt, *fxpFsetstatPkt:
 		method = "Setstat"
-	case *sshFxpRenamePacket:
+	case *fxpRenamePkt:
 		method = "Rename"
-	case *sshFxpSymlinkPacket:
+	case *fxpSymlinkPkt:
 		method = "Symlink"
-	case *sshFxpRemovePacket:
+	case *fxpRemovePkt:
 		method = "Remove"
-	case *sshFxpStatPacket, *sshFxpLstatPacket, *sshFxpFstatPacket:
+	case *fxpStatPkt, *fxpLstatPkt, *fxpFstatPkt:
 		method = "Stat"
-	case *sshFxpRmdirPacket:
+	case *fxpRmdirPkt:
 		method = "Rmdir"
-	case *sshFxpReadlinkPacket:
+	case *fxpReadlinkPkt:
 		method = "Readlink"
-	case *sshFxpMkdirPacket:
+	case *fxpMkdirPkt:
 		method = "Mkdir"
 	}
 	return method

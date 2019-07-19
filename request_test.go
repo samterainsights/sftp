@@ -118,13 +118,13 @@ func (h *Handlers) returnError(err error) {
 }
 
 func getStatusMsg(p interface{}) string {
-	pkt := p.(sshFxpStatusPacket)
+	pkt := p.(fxpStatusPkt)
 	return pkt.StatusError.msg
 }
 func checkOkStatus(t *testing.T, p interface{}) {
-	pkt := p.(sshFxpStatusPacket)
+	pkt := p.(fxpStatusPkt)
 	assert.Equal(t, pkt.StatusError.Code, uint32(ssh_FX_OK),
-		"sshFxpStatusPacket not OK\n", pkt.StatusError.msg)
+		"fxpStatusPkt not OK\n", pkt.StatusError.msg)
 }
 
 // fake/test packet
@@ -153,7 +153,7 @@ func TestRequestGet(t *testing.T) {
 		pkt := &fxpReadPkt{ID: uint32(i), Handle: "a",
 			Offset: uint64(i * 5), Len: 5}
 		rpkt := request.call(handlers, pkt)
-		dpkt := rpkt.(*sshFxpDataPacket)
+		dpkt := rpkt.(*fxpDataPkt)
 		assert.Equal(t, dpkt.id(), uint32(i))
 		assert.Equal(t, string(dpkt.Data), txt)
 	}
@@ -202,7 +202,7 @@ func TestRequestInfoStat(t *testing.T) {
 	request := testRequest("Stat")
 	pkt := fakePacket{myid: 1}
 	rpkt := request.call(handlers, pkt)
-	spkt, ok := rpkt.(*sshFxpStatResponse)
+	spkt, ok := rpkt.(*fxpAttrPkt)
 	assert.True(t, ok)
 	assert.Equal(t, spkt.info.Name(), "request_test.go")
 }
@@ -213,7 +213,7 @@ func TestRequestInfoList(t *testing.T) {
 	request.handle = "1"
 	pkt := fakePacket{myid: 1}
 	rpkt := request.opendir(handlers, pkt)
-	hpkt, ok := rpkt.(*sshFxpHandlePacket)
+	hpkt, ok := rpkt.(*fxpHandlePkt)
 	if assert.True(t, ok) {
 		assert.Equal(t, hpkt.Handle, "1")
 	}
@@ -225,9 +225,9 @@ func TestRequestInfoReadlink(t *testing.T) {
 	request := testRequest("Readlink")
 	pkt := fakePacket{myid: 1}
 	rpkt := request.call(handlers, pkt)
-	npkt, ok := rpkt.(*sshFxpNamePacket)
+	npkt, ok := rpkt.(*fxpNamePkt)
 	if assert.True(t, ok) {
-		assert.IsType(t, sshFxpNameAttr{}, npkt.NameAttrs[0])
+		assert.IsType(t, fxpNamePktItem{}, npkt.NameAttrs[0])
 		assert.Equal(t, npkt.NameAttrs[0].Name, "request_test.go")
 	}
 }
@@ -238,15 +238,15 @@ func TestOpendirHandleReuse(t *testing.T) {
 	request.handle = "1"
 	pkt := fakePacket{myid: 1}
 	rpkt := request.call(handlers, pkt)
-	assert.IsType(t, &sshFxpStatResponse{}, rpkt)
+	assert.IsType(t, &fxpAttrPkt{}, rpkt)
 
 	request.Method = "List"
 	pkt = fakePacket{myid: 2}
 	rpkt = request.opendir(handlers, pkt)
-	if assert.IsType(t, &sshFxpHandlePacket{}, rpkt) {
-		hpkt := rpkt.(*sshFxpHandlePacket)
+	if assert.IsType(t, &fxpHandlePkt{}, rpkt) {
+		hpkt := rpkt.(*fxpHandlePkt)
 		assert.Equal(t, hpkt.Handle, "1")
 	}
 	rpkt = request.call(handlers, pkt)
-	assert.IsType(t, &sshFxpNamePacket{}, rpkt)
+	assert.IsType(t, &fxpNamePkt{}, rpkt)
 }

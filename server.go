@@ -173,9 +173,9 @@ func (rs *RequestServer) packetWorker(
 		case *fxpClosePkt:
 			handle := pkt.getHandle()
 			rpkt = statusFromError(pkt, rs.closeRequest(handle))
-		case *sshFxpRealpathPacket:
+		case *fxpRealpathPkt:
 			rpkt = cleanPacketPath(pkt)
-		case *sshFxpOpendirPacket:
+		case *fxpOpendirPkt:
 			request := requestFromPacket(ctx, pkt)
 			rs.nextRequest(request)
 			rpkt = request.opendir(rs.Handlers, pkt)
@@ -183,7 +183,7 @@ func (rs *RequestServer) packetWorker(
 			request := requestFromPacket(ctx, pkt)
 			rs.nextRequest(request)
 			rpkt = request.open(rs.Handlers, pkt)
-		case *sshFxpFstatPacket:
+		case *fxpFstatPkt:
 			handle := pkt.getHandle()
 			request, ok := rs.getRequest(handle)
 			if !ok {
@@ -215,11 +215,11 @@ func (rs *RequestServer) packetWorker(
 }
 
 // clean and return name packet for file
-func cleanPacketPath(pkt *sshFxpRealpathPacket) responsePacket {
+func cleanPacketPath(pkt *fxpRealpathPkt) responsePacket {
 	path := cleanPath(pkt.getPath())
-	return &sshFxpNamePacket{
+	return &fxpNamePkt{
 		ID: pkt.id(),
-		NameAttrs: []sshFxpNameAttr{{
+		NameAttrs: []fxpNamePktItem{{
 			Name:     path,
 			LongName: path,
 			Attrs:    emptyFileAttr,

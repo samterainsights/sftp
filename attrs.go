@@ -97,13 +97,13 @@ func fileInfoFromStat(st *FileAttr, name string) os.FileInfo {
 	return fs
 }
 
-func fileStatFromInfo(fi os.FileInfo) FileAttr {
+func fileAttrFromInfo(fi os.FileInfo) *FileAttr {
 	if attr, ok := fi.Sys().(*FileAttr); ok {
-		return *attr
+		return attr
 	}
 
 	mtime := fi.ModTime()
-	attr := FileAttr{
+	attr := &FileAttr{
 		Flags:   attrFlagSize | attrFlagPermissions | attrFlagAcModTime,
 		Size:    uint64(fi.Size()),
 		Perms:   fi.Mode(),
@@ -112,32 +112,13 @@ func fileStatFromInfo(fi os.FileInfo) FileAttr {
 	}
 
 	// OS-specific file stat decoding
-	fileAttrFromInfoOS(fi, &attr)
+	fileAttrFromInfoOS(fi, attr)
 
 	return attr
 }
 
-func marshalFileAttr(b []byte, fi os.FileInfo) []byte {
-	attr := fileStatFromInfo(fi)
-	flags := attr.Flags
-	b = marshalUint32(b, flags)
-
-	if flags&attrFlagSize != 0 {
-		b = marshalUint64(b, attr.Size)
-	}
-	if flags&attrFlagUIDGID != 0 {
-		b = marshalUint32(b, attr.UID)
-		b = marshalUint32(b, attr.GID)
-	}
-	if flags&attrFlagPermissions != 0 {
-		b = marshalUint32(b, fromFileMode(attr.Perms))
-	}
-	if flags&attrFlagAcModTime != 0 {
-		b = marshalUint32(b, uint32(attr.AcTime.Unix()))
-		b = marshalUint32(b, uint32(attr.ModTime.Unix()))
-	}
-
-	return b
+func marshalFileInfo(b []byte, fi os.FileInfo) []byte {
+	return marshalFileAttr(b, fileAttrFromInfo(fi))
 }
 
 // toFileMode converts sftp filemode bits to the os.FileMode specification

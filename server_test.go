@@ -257,10 +257,10 @@ func TestConcurrentRequests(t *testing.T) {
 func TestStatusFromError(t *testing.T) {
 	type test struct {
 		err error
-		pkt sshFxpStatusPacket
+		pkt fxpStatusPkt
 	}
-	tpkt := func(id, code uint32) sshFxpStatusPacket {
-		return sshFxpStatusPacket{
+	tpkt := func(id, code uint32) fxpStatusPkt {
+		return fxpStatusPkt{
 			ID:          id,
 			StatusError: StatusError{Code: code},
 		}
@@ -309,7 +309,7 @@ func TestOpenStatRace(t *testing.T) {
 		Pflags: pflags,
 	})
 	id2 := client.nextID()
-	client.dispatchRequest(ch, sshFxpLstatPacket{
+	client.dispatchRequest(ch, fxpLstatPkt{
 		ID:   id2,
 		Path: tmppath,
 	})
