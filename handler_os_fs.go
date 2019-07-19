@@ -197,24 +197,24 @@ func handlePacket(s *Server, p orderedRequest) error {
 		err := os.Remove(p.Path)
 		rpkt = statusFromError(p, err)
 	case *fxpRemovePkt:
-		err := os.Remove(p.Filename)
+		err := os.Remove(p.Path)
 		rpkt = statusFromError(p, err)
 	case *fxpRenamePkt:
-		err := os.Rename(p.Oldpath, p.Newpath)
+		err := os.Rename(p.OldPath, p.NewPath)
 		rpkt = statusFromError(p, err)
 	case *fxpSymlinkPkt:
-		err := os.Symlink(p.Targetpath, p.Linkpath)
+		err := os.Symlink(p.TargetPath, p.LinkPath)
 		rpkt = statusFromError(p, err)
 	case *fxpClosePkt:
 		rpkt = statusFromError(p, s.closeHandle(p.Handle))
 	case *fxpReadlinkPkt:
 		f, err := os.Readlink(p.Path)
-		rpkt = fxpNamePkt{
+		rpkt = &fxpNamePkt{
 			ID: p.ID,
-			NameAttrs: []fxpNamePktItem{{
+			Items: []fxpNamePktItem{{
 				Name:     f,
 				LongName: f,
-				Attrs:    emptyFileAttr,
+				// no attributes: https://tools.ietf.org/pdf/draft-ietf-secsh-filexfer-02.pdf#34
 			}},
 		}
 		if err != nil {
@@ -223,12 +223,12 @@ func handlePacket(s *Server, p orderedRequest) error {
 	case *fxpRealpathPkt:
 		f, err := filepath.Abs(p.Path)
 		f = cleanPath(f)
-		rpkt = fxpNamePkt{
+		rpkt = &fxpNamePkt{
 			ID: p.ID,
-			NameAttrs: []fxpNamePktItem{{
+			Items: []fxpNamePktItem{{
 				Name:     f,
 				LongName: f,
-				Attrs:    emptyFileAttr,
+				// no attributes: https://tools.ietf.org/pdf/draft-ietf-secsh-filexfer-02.pdf#35
 			}},
 		}
 		if err != nil {
@@ -244,7 +244,7 @@ func handlePacket(s *Server, p orderedRequest) error {
 			rpkt = fxpOpenPkt{
 				ID:     p.ID,
 				Path:   p.Path,
-				Pflags: uint32(PFlagRead),
+				PFlags: PFlagRead,
 			}.respond(s)
 		}
 	case *fxpReadPkt:
@@ -257,10 +257,9 @@ func handlePacket(s *Server, p orderedRequest) error {
 			if _err != nil && (_err != io.EOF || n == 0) {
 				err = _err
 			}
-			rpkt = fxpDataPkt{
-				ID:     p.ID,
-				Length: uint32(n),
-				Data:   data[:n],
+			rpkt = &fxpDataPkt{
+				ID:   p.ID,
+				Data: data[:n],
 			}
 		}
 		if err != nil {
@@ -354,14 +353,14 @@ func (p fxpOpenPkt) readonly() bool {
 
 func (p fxpOpenPkt) hasPflags(flags ...pflag) bool {
 	for _, f := range flags {
-		if p.Pflags&uint32(f) == 0 {
+		if p.PFlags&f == 0 {
 			return false
 		}
 	}
 	return true
 }
 
-func (p fxpOpenPkt) respond(svr *Server) responsePacket {
+func (p *fxpOpenPkt) respond(svr *Server) responsePacket {
 	var osFlags int
 	if p.hasPflags(PFlagRead, PFlagWrite) {
 		osFlags |= os.O_RDWR
@@ -393,10 +392,10 @@ func (p fxpOpenPkt) respond(svr *Server) responsePacket {
 	}
 
 	handle := svr.nextHandle(f)
-	return fxpHandlePkt{ID: p.id(), Handle: handle}
+	return &fxpHandlePkt{p.id(), handle}
 }
 
-func (p fxpReaddirPkt) respond(svr *Server) responsePacket {
+func (p *fxpReaddirPkt) respond(svr *Server) responsePacket {
 	f, ok := svr.getHandle(p.Handle)
 	if !ok {
 		return statusFromError(p, syscall.EBADF)
@@ -408,36 +407,29 @@ func (p fxpReaddirPkt) respond(svr *Server) responsePacket {
 		return statusFromError(p, err)
 	}
 
-	ret := fxpNamePkt{ID: p.ID}
+	ret := &fxpNamePkt{ID: p.ID}
 	for _, dirent := range dirents {
-		ret.NameAttrs = append(ret.NameAttrs, fxpNamePktItem{
+		ret.Items = append(ret.Items, fxpNamePktItem{
 			Name:     dirent.Name(),
 			LongName: runLs(dirname, dirent),
-			Attrs:    []interface{}{dirent},
+			Attr:     fileAttrFromInfo(dirent),
 		})
 	}
 	return ret
 }
 
-func (p fxpSetstatPkt) respond(svr *Server) responsePacket {
-	// additional unmarshalling is required for each possibility here
-	b := p.Attrs.([]byte)
+func (p *fxpSetstatPkt) respond(svr *Server) responsePacket {
+	attr := p.Attr
 	var err error
 
 	debug("setstat name \"%s\"", p.Path)
-	if (p.Flags & attrFlagSize) != 0 {
-		var size uint64
-		if size, b, err = unmarshalUint64Safe(b); err == nil {
-			err = os.Truncate(p.Path, int64(size))
-		}
+	if attr.Flags&attrFlagSize != 0 {
+		err = os.Truncate(p.Path, int64(attr.Size))
 	}
-	if (p.Flags & attrFlagPermissions) != 0 {
-		var mode uint32
-		if mode, b, err = unmarshalUint32Safe(b); err == nil {
-			err = os.Chmod(p.Path, os.FileMode(mode))
-		}
+	if attr.Flags&attrFlagPermissions != 0 {
+		err = os.Chmod(p.Path, attr.Perms)
 	}
-	if (p.Flags & attrFlagAcModTime) != 0 {
+	if attr.Flags&attrFlagAcModTime != 0 {
 		var atime uint32
 		var mtime uint32
 		if atime, b, err = unmarshalUint32Safe(b); err != nil {
@@ -448,7 +440,7 @@ func (p fxpSetstatPkt) respond(svr *Server) responsePacket {
 			err = os.Chtimes(p.Path, atimeT, mtimeT)
 		}
 	}
-	if (p.Flags & attrFlagUIDGID) != 0 {
+	if attr.Flags&attrFlagUIDGID != 0 {
 		var uid uint32
 		var gid uint32
 		if uid, b, err = unmarshalUint32Safe(b); err != nil {
@@ -522,7 +514,7 @@ func translateErrno(errno syscall.Errno) uint32 {
 	return ssh_FX_FAILURE
 }
 
-func statusFromError(p ider, err error) fxpStatusPkt {
+func statusFromError(p ider, err error) *fxpStatusPkt {
 	ret := fxpStatusPkt{
 		ID: p.id(),
 		StatusError: StatusError{

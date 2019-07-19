@@ -448,9 +448,9 @@ type fxpWritePkt struct {
 	Data   []byte
 }
 
-func (p fxpWritePkt) id() uint32 { return p.ID }
+func (p *fxpWritePkt) id() uint32 { return p.ID }
 
-func (p fxpWritePkt) MarshalBinary() ([]byte, error) {
+func (p *fxpWritePkt) MarshalBinary() ([]byte, error) {
 	b := allocPkt(ssh_FXP_WRITE, 4+(4+len(p.Handle))+8+(4+len(p.Data)))
 	b = marshalUint32(b, p.ID)
 	b = marshalString(b, p.Handle)
