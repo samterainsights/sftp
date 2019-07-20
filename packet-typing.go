@@ -41,14 +41,12 @@ func (p fxpReadlinkPkt) getPath() string      { return p.Path }
 func (p fxpRealpathPkt) getPath() string      { return p.Path }
 func (p fxpMkdirPkt) getPath() string         { return p.Path }
 func (p fxpSetstatPkt) getPath() string       { return p.Path }
-func (p sshFxpStatvfsPacket) getPath() string { return p.Path }
+func (p fxpExtStatVFSPkt) getPath() string { return p.Path }
 func (p fxpRemovePkt) getPath() string        { return p.Filename }
 func (p fxpRenamePkt) getPath() string        { return p.Oldpath }
 func (p fxpSymlinkPkt) getPath() string       { return p.Targetpath }
 func (p fxpOpendirPkt) getPath() string       { return p.Path }
 func (p fxpOpenPkt) getPath() string          { return p.Path }
-
-func (p sshFxpExtendedPacketPosixRename) getPath() string { return p.Oldpath }
 
 // hasHandle
 func (p fxpFstatPkt) getHandle() string    { return p.Handle }
@@ -59,15 +57,14 @@ func (p fxpReaddirPkt) getHandle() string  { return p.Handle }
 func (p fxpClosePkt) getHandle() string    { return p.Handle }
 
 // notReadOnly
-func (p fxpWritePkt) notReadOnly()                     {}
-func (p fxpSetstatPkt) notReadOnly()                   {}
-func (p fxpFsetstatPkt) notReadOnly()                  {}
-func (p fxpRemovePkt) notReadOnly()                    {}
-func (p fxpMkdirPkt) notReadOnly()                     {}
-func (p fxpRmdirPkt) notReadOnly()                     {}
-func (p fxpRenamePkt) notReadOnly()                    {}
-func (p fxpSymlinkPkt) notReadOnly()                   {}
-func (p sshFxpExtendedPacketPosixRename) notReadOnly() {}
+func (p fxpWritePkt) notReadOnly()    {}
+func (p fxpSetstatPkt) notReadOnly()  {}
+func (p fxpFsetstatPkt) notReadOnly() {}
+func (p fxpRemovePkt) notReadOnly()   {}
+func (p fxpMkdirPkt) notReadOnly()    {}
+func (p fxpRmdirPkt) notReadOnly()    {}
+func (p fxpRenamePkt) notReadOnly()   {}
+func (p fxpSymlinkPkt) notReadOnly()  {}
 
 // some packets with ID are missing id()
 func (p StatVFS) id() uint32       { return p.ID }

@@ -426,28 +426,14 @@ func (p *fxpSetstatPkt) respond(svr *Server) responsePacket {
 	if attr.Flags&attrFlagSize != 0 {
 		err = os.Truncate(p.Path, int64(attr.Size))
 	}
-	if attr.Flags&attrFlagPermissions != 0 {
+	if err == nil && attr.Flags&attrFlagPermissions != 0 {
 		err = os.Chmod(p.Path, attr.Perms)
 	}
-	if attr.Flags&attrFlagAcModTime != 0 {
-		var atime uint32
-		var mtime uint32
-		if atime, b, err = unmarshalUint32Safe(b); err != nil {
-		} else if mtime, b, err = unmarshalUint32Safe(b); err != nil {
-		} else {
-			atimeT := time.Unix(int64(atime), 0)
-			mtimeT := time.Unix(int64(mtime), 0)
-			err = os.Chtimes(p.Path, atimeT, mtimeT)
-		}
+	if err == nil && attr.Flags&attrFlagAcModTime != 0 {
+		err = os.Chtimes(p.Path, attr.AcTime, attr.ModTime)
 	}
-	if attr.Flags&attrFlagUIDGID != 0 {
-		var uid uint32
-		var gid uint32
-		if uid, b, err = unmarshalUint32Safe(b); err != nil {
-		} else if gid, _, err = unmarshalUint32Safe(b); err != nil {
-		} else {
-			err = os.Chown(p.Path, int(uid), int(gid))
-		}
+	if err == nil && attr.Flags&attrFlagUIDGID != 0 {
+		err = os.Chown(p.Path, int(attr.UID), int(attr.GID))
 	}
 
 	return statusFromError(p, err)

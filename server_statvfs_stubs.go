@@ -6,6 +6,6 @@ import (
 	"syscall"
 )
 
-func (p sshFxpExtendedPacketStatVFS) respond(svr *Server) responsePacket {
+func (p fxpExtStatVFSPkt) respond(svr *Server) responsePacket {
 	return statusFromError(p, syscall.ENOTSUP)
 }

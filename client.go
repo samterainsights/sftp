@@ -528,7 +528,7 @@ func (c *Client) fstat(handle string) (*FileAttr, error) {
 func (c *Client) StatVFS(path string) (*StatVFS, error) {
 	// send the StatVFS packet to the server
 	id := c.nextID()
-	typ, data, err := c.sendPacket(sshFxpStatvfsPacket{
+	typ, data, err := c.sendPacket(fxpExtStatVFSPkt{
 		ID:   id,
 		Path: path,
 	})
@@ -635,7 +635,7 @@ func (c *Client) Rename(oldname, newname string) error {
 // which will replace newname if it already exists.
 func (c *Client) PosixRename(oldname, newname string) error {
 	id := c.nextID()
-	typ, data, err := c.sendPacket(sshFxpPosixRenamePacket{
+	typ, data, err := c.sendPacket(fxpExtPosixRenamePkt{
 		ID:      id,
 		Oldpath: oldname,
 		Newpath: newname,
