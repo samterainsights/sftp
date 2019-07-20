@@ -30,11 +30,11 @@ func TestClientStatVFS(t *testing.T) {
 		t.Fatal("fr_size does not match")
 	}
 
-	if vfs.Bfree != uint64(s.Bfree) {
+	if vfs.BlocksFree != uint64(s.BlocksFree) {
 		t.Fatal("f_bsize does not match")
 	}
 
-	if vfs.Favail != uint64(s.Ffree) {
+	if vfs.FilesAvail != uint64(s.FilesFree) {
 		t.Fatal("f_namemax does not match")
 	}
 }

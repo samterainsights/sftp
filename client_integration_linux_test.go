@@ -26,15 +26,15 @@ func TestClientStatVFS(t *testing.T) {
 	}
 
 	// check some stats
-	if vfs.Frsize != uint64(s.Frsize) {
-		t.Fatalf("fr_size does not match, expected: %v, got: %v", s.Frsize, vfs.Frsize)
+	if vfs.FBlockSize != uint64(s.FBlockSize) {
+		t.Fatalf("fr_size does not match, expected: %v, got: %v", s.FBlockSize, vfs.FBlockSize)
 	}
 
-	if vfs.Bsize != uint64(s.Bsize) {
-		t.Fatalf("f_bsize does not match, expected: %v, got: %v", s.Bsize, vfs.Bsize)
+	if vfs.BlockSize != uint64(s.BlockSize) {
+		t.Fatalf("f_bsize does not match, expected: %v, got: %v", s.BlockSize, vfs.BlockSize)
 	}
 
-	if vfs.Namemax != uint64(s.Namelen) {
-		t.Fatalf("f_namemax does not match, expected: %v, got: %v", s.Namelen, vfs.Namemax)
+	if vfs.MaxNameLen != uint64(s.Namelen) {
+		t.Fatalf("f_namemax does not match, expected: %v, got: %v", s.Namelen, vfs.MaxNameLen)
 	}
 }

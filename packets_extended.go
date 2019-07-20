@@ -1,19 +1,21 @@
 package sftp
 
-import (
-	"bytes"
-	"encoding/binary"
-)
-
 // README
 //
 // This file contains (un)marshaling code for all supported extended packets, currently:
 //
 // 		- "posix-rename@openssh.com"
 //		- "statvfs@openssh.com"
+//		- TODO(samterainsights): "fstatvfs@openssh.com"
+//		- TODO(samterainsights): "hardlink@openssh.com"
+//		- TODO(samterainsights): "fsync@openssh.com"
 //
 // Please add to this list if you implement another extended packet.
 
+// fxpExtPosixRenamePkt is an extended "posix-rename@openssh.com" request packet. It
+// defers from SSH_FXP_RENAME in that POSIX renames are guaranteed to be atomic and
+// thus cannot fail halfway through and leave multiple hard links to the same file,
+// with the caveat that they are not supported on all OSs/filesystems.
 type fxpExtPosixRenamePkt struct {
 	ID      uint32 // set externally from the SSH_FXP_EXTENDED wrapper
 	OldPath string
@@ -25,9 +27,10 @@ func (p *fxpExtPosixRenamePkt) getPath() string { return p.Oldpath }
 func (p *fxpExtPosixRenamePkt) notReadOnly()    {}
 
 func (p *fxpExtPosixRenamePkt) MarshalBinary() ([]byte, error) {
-	b := allocPkt(ssh_FXP_EXTENDED, 4+(4+len(p.OldPath))+(4+len(p.NewPath)))
+	const ext = "posix-rename@openssh.com"
+	b := allocPkt(ssh_FXP_EXTENDED, 4+(4+len(ext))+(4+len(p.OldPath))+(4+len(p.NewPath)))
 	b = marshalUint32(b, p.ID)
-	b = marshalString(b, "posix-rename@openssh.com")
+	b = marshalString(b, ext)
 	b = marshalString(b, p.Oldpath)
 	return marshalString(b, p.Newpath), nil
 }
@@ -40,57 +43,128 @@ func (p *fxpExtPosixRenamePkt) UnmarshalBinary(b []byte) (err error) {
 	return
 }
 
-type fxpExtStatVFSPkt struct {
-	ID   uint32
+// fxpExtStatvfsPkt is an extended "statvfs@openssh.com" request packet. It
+// is used to obtain detailed information about an underlying virtual
+// filesystem.
+type fxpExtStatvfsPkt struct {
+	ID   uint32 // set externally from the SSH_FXP_EXTENDED wrapper
 	Path string
 }
 
-func (p *fxpExtStatVFSPkt) id() uint32     { return p.ID }
-func (p *fxpExtStatVFSPkt) readonly() bool { return true }
+func (p *fxpExtStatvfsPkt) id() uint32     { return p.ID }
+func (p *fxpExtStatvfsPkt) readonly() bool { return true }
 
-func (p *fxpExtStatVFSPkt) /*FIXME(samterainsights): encode length prefix*/ MarshalBinary() ([]byte, error) {
-	l := 1 + 4 + // type(byte) + uint32
-		len(p.Path) +
-		len("statvfs@openssh.com")
-
-	b := make([]byte, 0, l)
-	b = append(b, ssh_FXP_EXTENDED)
+func (p *fxpExtStatvfsPkt) MarshalBinary() ([]byte, error) {
+	const ext = "statvfs@openssh.com"
+	b := allocPkt(ssh_FXP_EXTENDED, 4+(4+len(ext))+(4+len(p.Path)))
 	b = marshalUint32(b, p.ID)
-	b = marshalString(b, "statvfs@openssh.com")
-	b = marshalString(b, p.Path)
-	return b, nil
+	b = marshalString(b, ext)
+	return marshalString(b, p.Path), nil
 }
 
-// A StatVFS contains statistics about a filesystem.
+func (p *fxpExtStatvfsPkt) UnmarshalBinary(b []byte) (err error) {
+	p.Path, _, err = unmarshalStringSafe(b)
+	return
+}
+
+// fxpExtVfsPkt is the success reply to an `statvfs@openssh.com` request.
+type fxpExtVfsPkt struct {
+	ID uint32
+	StatVFS
+}
+
+func (p *fxpExtVfsPkt) id() uint32 { return p.ID }
+
+func (p *fxpExtVfsPkt) MarshalBinary() ([]byte, error) {
+	b := allocPkt(4 + (11 * 8)) // uint32 ID + 11 uint64s
+	b = marshalUint32(b, p.ID)
+	b = marshalUint64(b, p.BlockSize)
+	b = marshalUint64(b, p.FBlockSize)
+	b = marshalUint64(b, p.Blocks)
+	b = marshalUint64(b, p.BlocksFree)
+	b = marshalUint64(b, p.BlocksAvail)
+	b = marshalUint64(b, p.Files)
+	b = marshalUint64(b, p.FilesFree)
+	b = marshalUint64(b, p.FilesAvail)
+	b = marshalUint64(b, p.FSID)
+	b = marshalUint64(b, p.Flag)
+	return marshalUint64(b, p.MaxNameLen), nil
+}
+
+func (p *fxpExtVfsPkt) UnmarshalBinary(b []byte) (err error) {
+	if p.ID, b, err = unmarshalUint32Safe(b); err != nil {
+		return
+	}
+	if p.BlockSize, b, err = unmarshalUint64Safe(b); err != nil {
+		return
+	}
+	if p.FBlockSize, b, err = unmarshalUint64Safe(b); err != nil {
+		return
+	}
+	if p.Blocks, b, err = unmarshalUint64Safe(b); err != nil {
+		return
+	}
+	if p.BlocksFree, b, err = unmarshalUint64Safe(b); err != nil {
+		return
+	}
+	if p.BlocksAvail, b, err = unmarshalUint64Safe(b); err != nil {
+		return
+	}
+	if p.Files, b, err = unmarshalUint64Safe(b); err != nil {
+		return
+	}
+	if p.FilesFree, b, err = unmarshalUint64Safe(b); err != nil {
+		return
+	}
+	if p.FilesAvail, b, err = unmarshalUint64Safe(b); err != nil {
+		return
+	}
+	if p.FSID, b, err = unmarshalUint64Safe(b); err != nil {
+		return
+	}
+	if p.Flag, b, err = unmarshalUint64Safe(b); err != nil {
+		return
+	}
+	p.MaxNameLen, _, err = unmarshalUint64Safe(b)
+	return
+}
+
+const (
+	vfsFlagReadonly = 0x1
+	vfsFlagNoSetUID = 0x2
+)
+
+// A StatVFS contains detailed information about a virtual filesystem.
 type StatVFS struct {
-	ID      uint32
-	Bsize   uint64 /* file system block size */
-	Frsize  uint64 /* fundamental fs block size */
-	Blocks  uint64 /* number of blocks (unit f_frsize) */
-	Bfree   uint64 /* free blocks in file system */
-	Bavail  uint64 /* free blocks for non-root */
-	Files   uint64 /* total file inodes */
-	Ffree   uint64 /* free file inodes */
-	Favail  uint64 /* free file inodes for to non-root */
-	Fsid    uint64 /* file system id */
-	Flag    uint64 /* bit mask of f_flag values */
-	Namemax uint64 /* maximum filename length */
+	BlockSize   uint64
+	FBlockSize  uint64 // fundamental block size
+	Blocks      uint64 // number of fundamental blocks
+	BlocksFree  uint64 // free blocks in file system
+	BlocksAvail uint64 // free blocks for non-root
+	Files       uint64 // total file inodes
+	FilesFree   uint64 // free file inodes
+	FilesAvail  uint64 // free file inodes for to non-root
+	FSID        uint64 // file system id
+	Flag        uint64 // bit mask of f_flag values
+	MaxNameLen  uint64 // maximum filename length
 }
 
 // TotalSpace calculates the amount of total space in a filesystem.
-func (p *StatVFS) TotalSpace() uint64 {
-	return p.Frsize * p.Blocks
+func (fs *StatVFS) TotalSpace() uint64 {
+	return fs.FBlockSize * fs.Blocks
 }
 
 // FreeSpace calculates the amount of free space in a filesystem.
-func (p *StatVFS) FreeSpace() uint64 {
-	return p.Frsize * p.Bfree
+func (fs *StatVFS) FreeSpace() uint64 {
+	return fs.FBlockSize * fs.BlocksFree
 }
 
-// MarshalBinary converts to ssh_FXP_EXTENDED_REPLY packet binary format
-func (p *StatVFS) /*FIXME(samterainsights): encode length prefix*/ MarshalBinary() ([]byte, error) {
-	var buf bytes.Buffer
-	buf.Write([]byte{ssh_FXP_EXTENDED_REPLY})
-	err := binary.Write(&buf, binary.BigEndian, p)
-	return buf.Bytes(), err
+// Readonly returns true if the filesystem is read-only.
+func (fs *StatVFS) Readonly() bool {
+	return fs.Flag&vfsFlagReadonly != 0
+}
+
+// SupportsSetUID returns true if the filesystem supports `setuid`.
+func (fs *StatVFS) SupportsSetUID() bool {
+	return fs.Flag&vfsFlagNoSetUID == 0
 }

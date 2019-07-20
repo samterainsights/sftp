@@ -528,7 +528,7 @@ func (c *Client) fstat(handle string) (*FileAttr, error) {
 func (c *Client) StatVFS(path string) (*StatVFS, error) {
 	// send the StatVFS packet to the server
 	id := c.nextID()
-	typ, data, err := c.sendPacket(fxpExtStatVFSPkt{
+	typ, data, err := c.sendPacket(fxpExtStatvfsPkt{
 		ID:   id,
 		Path: path,
 	})

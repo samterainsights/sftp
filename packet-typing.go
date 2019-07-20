@@ -34,19 +34,19 @@ type notReadOnly interface {
 
 //// define types by adding methods
 // hasPath
-func (p fxpLstatPkt) getPath() string         { return p.Path }
-func (p fxpStatPkt) getPath() string          { return p.Path }
-func (p fxpRmdirPkt) getPath() string         { return p.Path }
-func (p fxpReadlinkPkt) getPath() string      { return p.Path }
-func (p fxpRealpathPkt) getPath() string      { return p.Path }
-func (p fxpMkdirPkt) getPath() string         { return p.Path }
-func (p fxpSetstatPkt) getPath() string       { return p.Path }
-func (p fxpExtStatVFSPkt) getPath() string { return p.Path }
-func (p fxpRemovePkt) getPath() string        { return p.Filename }
-func (p fxpRenamePkt) getPath() string        { return p.Oldpath }
-func (p fxpSymlinkPkt) getPath() string       { return p.Targetpath }
-func (p fxpOpendirPkt) getPath() string       { return p.Path }
-func (p fxpOpenPkt) getPath() string          { return p.Path }
+func (p fxpLstatPkt) getPath() string      { return p.Path }
+func (p fxpStatPkt) getPath() string       { return p.Path }
+func (p fxpRmdirPkt) getPath() string      { return p.Path }
+func (p fxpReadlinkPkt) getPath() string   { return p.Path }
+func (p fxpRealpathPkt) getPath() string   { return p.Path }
+func (p fxpMkdirPkt) getPath() string      { return p.Path }
+func (p fxpSetstatPkt) getPath() string    { return p.Path }
+func (p fxpExtStatvfsPkt) getPath() string { return p.Path }
+func (p fxpRemovePkt) getPath() string     { return p.Filename }
+func (p fxpRenamePkt) getPath() string     { return p.Oldpath }
+func (p fxpSymlinkPkt) getPath() string    { return p.Targetpath }
+func (p fxpOpendirPkt) getPath() string    { return p.Path }
+func (p fxpOpenPkt) getPath() string       { return p.Path }
 
 // hasHandle
 func (p fxpFstatPkt) getHandle() string    { return p.Handle }
@@ -66,12 +66,8 @@ func (p fxpRmdirPkt) notReadOnly()    {}
 func (p fxpRenamePkt) notReadOnly()   {}
 func (p fxpSymlinkPkt) notReadOnly()  {}
 
-// some packets with ID are missing id()
-func (p StatVFS) id() uint32       { return p.ID }
-func (p fxpVersionPkt) id() uint32 { return 0 }
-
 // take raw incoming packet data and build packet objects
-func makePacket(p rxPacket) (requestPacket, error) {
+func makePacket(pktType fxp, pktData []byte) (requestPacket, error) {
 	var pkt requestPacket
 
 	switch p.pktType {
@@ -121,5 +117,5 @@ func makePacket(p rxPacket) (requestPacket, error) {
 
 	// If an error occurs, still return the partially unpacked packet to allow callers
 	// to return error messages appropriately with necessary id() method.
-	return pkt, pkt.UnmarshalBinary(p.pktBytes)
+	return pkt, pkt.UnmarshalBinary(pktData)
 }

@@ -115,11 +115,6 @@ func ReadOnly() ServerOption {
 	}
 }
 
-type rxPacket struct {
-	pktType  fxp
-	pktBytes []byte
-}
-
 // Up to N parallel servers
 func (svr *Server) sftpServerWorker(pktChan chan orderedRequest) error {
 	for pkt := range pktChan {
@@ -308,7 +303,7 @@ func (svr *Server) Serve() error {
 			break
 		}
 
-		pkt, err = makePacket(rxPacket{fxp(pktType), pktBytes})
+		pkt, err = makePacket(fxp(pktType), pktBytes)
 		if err != nil {
 			switch errors.Cause(err) {
 			case errUnknownExtendedPacket:

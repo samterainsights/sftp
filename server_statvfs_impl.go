@@ -9,7 +9,7 @@ import (
 	"syscall"
 )
 
-func (p fxpExtStatVFSPkt) respond(svr *Server) responsePacket {
+func (p fxpExtStatvfsPkt) respond(svr *Server) responsePacket {
 	stat := &syscall.Statfs_t{}
 	if err := syscall.Statfs(p.Path, stat); err != nil {
 		return statusFromError(p, err)

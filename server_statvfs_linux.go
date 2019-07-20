@@ -8,15 +8,15 @@ import (
 
 func statvfsFromStatfst(stat *syscall.Statfs_t) (*StatVFS, error) {
 	return &StatVFS{
-		Bsize:   uint64(stat.Bsize),
-		Frsize:  uint64(stat.Frsize),
+		BlockSize:   uint64(stat.BlockSize),
+		FBlockSize:  uint64(stat.FBlockSize),
 		Blocks:  stat.Blocks,
-		Bfree:   stat.Bfree,
-		Bavail:  stat.Bavail,
+		BlocksFree:   stat.BlocksFree,
+		BlocksAvail:  stat.BlocksAvail,
 		Files:   stat.Files,
-		Ffree:   stat.Ffree,
-		Favail:  stat.Ffree,         // not sure how to calculate Favail
+		FilesFree:   stat.FilesFree,
+		FilesAvail:  stat.FilesFree,         // not sure how to calculate FilesAvail
 		Flag:    uint64(stat.Flags), // assuming POSIX?
-		Namemax: uint64(stat.Namelen),
+		MaxNameLen: uint64(stat.Namelen),
 	}, nil
 }

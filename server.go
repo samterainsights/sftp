@@ -130,7 +130,7 @@ func (rs *RequestServer) Serve() error {
 			break
 		}
 
-		pkt, err = makePacket(rxPacket{fxp(pktType), pktBytes})
+		pkt, err = makePacket(fxp(pktType), pktBytes)
 		if err != nil {
 			switch errors.Cause(err) {
 			case errUnknownExtendedPacket:
