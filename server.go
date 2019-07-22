@@ -103,7 +103,7 @@ func (rwc noopCloseRWC) Close() error { return nil }
 // of an SSH "session" channel, however it could also be served over TLS, etc. Note that
 // SFTP has no security provisions so it should always be layered on top of a secure
 // connection.
-func Serve(transport io.ReadWriter, handler RequestHandler) error {
+func Serve(transport io.ReadWriter, handler RequestHandler) (err error) {
 	conn := &conn{
 		Reader:      transport,
 		WriteCloser: noopCloseRWC{transport},
@@ -114,6 +114,7 @@ func Serve(transport io.ReadWriter, handler RequestHandler) error {
 		pktMgr:         newPktMgr(conn),
 		openRequests:   make(map[string]*Request),
 	}
+	defer rs.cleanup()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -130,13 +131,14 @@ func Serve(transport io.ReadWriter, handler RequestHandler) error {
 		}()
 	})
 
-	var err error
+	defer wg.Wait()
+	defer close(pktChan)
+
 	var pktType uint8
 	var pktBytes []byte
 	for {
-		pktType, pktBytes, err = rs.recvPacket()
-		if err != nil {
-			break
+		if pktType, pktBytes, err = rs.recvPacket(); err != nil {
+			return
 		}
 
 		var pkt requestPacket
@@ -157,18 +159,6 @@ func Serve(transport io.ReadWriter, handler RequestHandler) error {
 
 		pktChan <- rs.pktMgr.newOrderedRequest(pkt)
 	}
-
-	close(pktChan) // shuts down sftpServerWorkers
-	wg.Wait()      // wait for all workers to exit
-
-	// make sure all open requests are properly closed
-	// (eg. possible on dropped connections, client crashes, etc.)
-	for handle, req := range rs.openRequests {
-		delete(rs.openRequests, handle)
-		req.close()
-	}
-
-	return err
 }
 
 // New Open packet/Request
@@ -265,4 +255,13 @@ func (rs *server) packetWorker(
 		rs.pktMgr.readyPacket(orderedResponse{rpkt, pkt.orderID()})
 	}
 	return nil
+}
+
+func (rs *server) cleanup() {
+	// make sure all open requests are properly closed
+	// (eg. possible on dropped connections, client crashes, etc.)
+	for handle, req := range rs.openRequests {
+		delete(rs.openRequests, handle)
+		req.close()
+	}
 }
