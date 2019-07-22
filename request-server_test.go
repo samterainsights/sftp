@@ -15,7 +15,7 @@ var _ = fmt.Print
 
 type csPair struct {
 	cli *Client
-	svr *RequestServer
+	svr *server
 }
 
 // these must be closed in order, else client.Close will hang
@@ -35,7 +35,7 @@ func clientRequestServerPair(t *testing.T) *csPair {
 	skipIfWindows(t)
 	ready := make(chan bool)
 	os.Remove(sock) // either this or signal handling
-	var server *RequestServer
+	var server *server
 	go func() {
 		l, err := net.Listen("unix", sock)
 		if err != nil {
@@ -366,29 +366,4 @@ func TestRequestReaddir(t *testing.T) {
 	assert.Len(t, di, 100)
 	names := []string{di[18].Name(), di[81].Name()}
 	assert.Equal(t, []string{"foo_18", "foo_81"}, names)
-}
-
-func TestCleanPath(t *testing.T) {
-	assert.Equal(t, "/", cleanPath("/"))
-	assert.Equal(t, "/", cleanPath("."))
-	assert.Equal(t, "/", cleanPath("/."))
-	assert.Equal(t, "/", cleanPath("/a/.."))
-	assert.Equal(t, "/a/c", cleanPath("/a/b/../c"))
-	assert.Equal(t, "/a/c", cleanPath("/a/b/../c/"))
-	assert.Equal(t, "/a", cleanPath("/a/b/.."))
-	assert.Equal(t, "/a/b/c", cleanPath("/a/b/c"))
-	assert.Equal(t, "/", cleanPath("//"))
-	assert.Equal(t, "/a", cleanPath("/a/"))
-	assert.Equal(t, "/a", cleanPath("a/"))
-	assert.Equal(t, "/a/b/c", cleanPath("/a//b//c/"))
-
-	// filepath.ToSlash does not touch \ as char on unix systems
-	// so os.PathSeparator is used for windows compatible tests
-	bslash := string(os.PathSeparator)
-	assert.Equal(t, "/", cleanPath(bslash))
-	assert.Equal(t, "/", cleanPath(bslash+bslash))
-	assert.Equal(t, "/a", cleanPath(bslash+"a"+bslash))
-	assert.Equal(t, "/a", cleanPath("a"+bslash))
-	assert.Equal(t, "/a/b/c",
-		cleanPath(bslash+"a"+bslash+bslash+"b"+bslash+bslash+"c"+bslash))
 }

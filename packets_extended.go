@@ -23,23 +23,23 @@ type fxpExtPosixRenamePkt struct {
 }
 
 func (p *fxpExtPosixRenamePkt) id() uint32      { return p.ID }
-func (p *fxpExtPosixRenamePkt) getPath() string { return p.Oldpath }
+func (p *fxpExtPosixRenamePkt) getPath() string { return p.OldPath }
 func (p *fxpExtPosixRenamePkt) notReadOnly()    {}
 
 func (p *fxpExtPosixRenamePkt) MarshalBinary() ([]byte, error) {
 	const ext = "posix-rename@openssh.com"
 	b := allocPkt(ssh_FXP_EXTENDED, 4+(4+len(ext))+(4+len(p.OldPath))+(4+len(p.NewPath)))
-	b = marshalUint32(b, p.ID)
-	b = marshalString(b, ext)
-	b = marshalString(b, p.Oldpath)
-	return marshalString(b, p.Newpath), nil
+	b = appendU32(b, p.ID)
+	b = appendStr(b, ext)
+	b = appendStr(b, p.OldPath)
+	return appendStr(b, p.NewPath), nil
 }
 
 func (p *fxpExtPosixRenamePkt) UnmarshalBinary(b []byte) (err error) {
-	if p.OldPath, b, err = unmarshalStringSafe(b); err != nil {
+	if p.OldPath, b, err = takeStr(b); err != nil {
 		return
 	}
-	p.NewPath, _, err = unmarshalStringSafe(b)
+	p.NewPath, _, err = takeStr(b)
 	return
 }
 
@@ -57,13 +57,13 @@ func (p *fxpExtStatvfsPkt) readonly() bool { return true }
 func (p *fxpExtStatvfsPkt) MarshalBinary() ([]byte, error) {
 	const ext = "statvfs@openssh.com"
 	b := allocPkt(ssh_FXP_EXTENDED, 4+(4+len(ext))+(4+len(p.Path)))
-	b = marshalUint32(b, p.ID)
-	b = marshalString(b, ext)
-	return marshalString(b, p.Path), nil
+	b = appendU32(b, p.ID)
+	b = appendStr(b, ext)
+	return appendStr(b, p.Path), nil
 }
 
 func (p *fxpExtStatvfsPkt) UnmarshalBinary(b []byte) (err error) {
-	p.Path, _, err = unmarshalStringSafe(b)
+	p.Path, _, err = takeStr(b)
 	return
 }
 
@@ -76,56 +76,56 @@ type fxpExtVfsPkt struct {
 func (p *fxpExtVfsPkt) id() uint32 { return p.ID }
 
 func (p *fxpExtVfsPkt) MarshalBinary() ([]byte, error) {
-	b := allocPkt(4 + (11 * 8)) // uint32 ID + 11 uint64s
-	b = marshalUint32(b, p.ID)
-	b = marshalUint64(b, p.BlockSize)
-	b = marshalUint64(b, p.FBlockSize)
-	b = marshalUint64(b, p.Blocks)
-	b = marshalUint64(b, p.BlocksFree)
-	b = marshalUint64(b, p.BlocksAvail)
-	b = marshalUint64(b, p.Files)
-	b = marshalUint64(b, p.FilesFree)
-	b = marshalUint64(b, p.FilesAvail)
-	b = marshalUint64(b, p.FSID)
-	b = marshalUint64(b, p.Flag)
-	return marshalUint64(b, p.MaxNameLen), nil
+	b := allocPkt(ssh_FXP_EXTENDED_REPLY, 4+(11*8)) // uint32 ID + 11 uint64s
+	b = appendU32(b, p.ID)
+	b = appendU64(b, p.BlockSize)
+	b = appendU64(b, p.FBlockSize)
+	b = appendU64(b, p.Blocks)
+	b = appendU64(b, p.BlocksFree)
+	b = appendU64(b, p.BlocksAvail)
+	b = appendU64(b, p.Files)
+	b = appendU64(b, p.FilesFree)
+	b = appendU64(b, p.FilesAvail)
+	b = appendU64(b, p.FSID)
+	b = appendU64(b, p.Flag)
+	return appendU64(b, p.MaxNameLen), nil
 }
 
 func (p *fxpExtVfsPkt) UnmarshalBinary(b []byte) (err error) {
-	if p.ID, b, err = unmarshalUint32Safe(b); err != nil {
+	if p.ID, b, err = takeU32(b); err != nil {
 		return
 	}
-	if p.BlockSize, b, err = unmarshalUint64Safe(b); err != nil {
+	if p.BlockSize, b, err = takeU64(b); err != nil {
 		return
 	}
-	if p.FBlockSize, b, err = unmarshalUint64Safe(b); err != nil {
+	if p.FBlockSize, b, err = takeU64(b); err != nil {
 		return
 	}
-	if p.Blocks, b, err = unmarshalUint64Safe(b); err != nil {
+	if p.Blocks, b, err = takeU64(b); err != nil {
 		return
 	}
-	if p.BlocksFree, b, err = unmarshalUint64Safe(b); err != nil {
+	if p.BlocksFree, b, err = takeU64(b); err != nil {
 		return
 	}
-	if p.BlocksAvail, b, err = unmarshalUint64Safe(b); err != nil {
+	if p.BlocksAvail, b, err = takeU64(b); err != nil {
 		return
 	}
-	if p.Files, b, err = unmarshalUint64Safe(b); err != nil {
+	if p.Files, b, err = takeU64(b); err != nil {
 		return
 	}
-	if p.FilesFree, b, err = unmarshalUint64Safe(b); err != nil {
+	if p.FilesFree, b, err = takeU64(b); err != nil {
 		return
 	}
-	if p.FilesAvail, b, err = unmarshalUint64Safe(b); err != nil {
+	if p.FilesAvail, b, err = takeU64(b); err != nil {
 		return
 	}
-	if p.FSID, b, err = unmarshalUint64Safe(b); err != nil {
+	if p.FSID, b, err = takeU64(b); err != nil {
 		return
 	}
-	if p.Flag, b, err = unmarshalUint64Safe(b); err != nil {
+	if p.Flag, b, err = takeU64(b); err != nil {
 		return
 	}
-	p.MaxNameLen, _, err = unmarshalUint64Safe(b)
+	p.MaxNameLen, _, err = takeU64(b)
 	return
 }
 

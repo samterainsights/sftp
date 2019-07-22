@@ -91,10 +91,10 @@ func TestFlags(t *testing.T) {
 func TestUnmarshalStatus(t *testing.T) {
 	requestID := uint32(1)
 
-	id := marshalUint32([]byte{}, requestID)
-	idCode := marshalUint32(id, ssh_FX_FAILURE)
-	idCodeMsg := marshalString(idCode, "err msg")
-	idCodeMsgLang := marshalString(idCodeMsg, "lang tag")
+	id := appendU32([]byte{}, requestID)
+	idCode := appendU32(id, ssh_FX_FAILURE)
+	idCodeMsg := appendStr(idCode, "err msg")
+	idCodeMsgLang := appendStr(idCodeMsg, "lang tag")
 
 	var tests = []struct {
 		desc   string

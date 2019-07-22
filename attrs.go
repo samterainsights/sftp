@@ -118,7 +118,7 @@ func fileAttrFromInfo(fi os.FileInfo) *FileAttr {
 }
 
 func marshalFileInfo(b []byte, fi os.FileInfo) []byte {
-	return marshalFileAttr(b, fileAttrFromInfo(fi))
+	return appendAttr(b, fileAttrFromInfo(fi))
 }
 
 // toFileMode converts sftp filemode bits to the os.FileMode specification

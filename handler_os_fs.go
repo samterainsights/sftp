@@ -6,13 +6,10 @@ import (
 	"encoding"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/pkg/errors"
 )
@@ -24,8 +21,7 @@ const sftpServerWorkerCount = 8
 // This implementation currently supports most of sftp server protocol version 3,
 // as specified at http://tools.ietf.org/html/draft-ietf-secsh-filexfer-02
 type Server struct {
-	*serverConn
-	debugStream   io.Writer
+	*conn
 	readOnly      bool
 	pktMgr        *packetManager
 	openFiles     map[string]*os.File
@@ -68,51 +64,22 @@ type serverRespondablePacket interface {
 }
 
 // NewServer creates a new Server instance around the provided streams, serving
-// content from the root of the filesystem.  Optionally, ServerOption
-// functions may be specified to further configure the Server.
+// content from the root of the filesystem.
 //
 // A subsequent call to Serve() is required to begin serving files over SFTP.
-func NewServer(rwc io.ReadWriteCloser, options ...ServerOption) (*Server, error) {
-	svrConn := &serverConn{
-		conn: conn{
-			Reader:      rwc,
-			WriteCloser: rwc,
-		},
+func NewServer(rwc io.ReadWriteCloser) (*Server, error) {
+	conn := &conn{
+		Reader:      rwc,
+		WriteCloser: rwc,
 	}
 	s := &Server{
-		serverConn:  svrConn,
-		debugStream: ioutil.Discard,
-		pktMgr:      newPktMgr(svrConn),
+		conn:        conn,
+		pktMgr:      newPktMgr(conn),
 		openFiles:   make(map[string]*os.File),
 		maxTxPacket: 1 << 15,
 	}
 
-	for _, o := range options {
-		if err := o(s); err != nil {
-			return nil, err
-		}
-	}
-
 	return s, nil
-}
-
-// A ServerOption is a function which applies configuration to a Server.
-type ServerOption func(*Server) error
-
-// WithDebug enables Server debugging output to the supplied io.Writer.
-func WithDebug(w io.Writer) ServerOption {
-	return func(s *Server) error {
-		s.debugStream = w
-		return nil
-	}
-}
-
-// ReadOnly configures a Server to serve files in read-only mode.
-func ReadOnly() ServerOption {
-	return func(s *Server) error {
-		s.readOnly = true
-		return nil
-	}
 }
 
 // Up to N parallel servers
@@ -125,16 +92,14 @@ func (svr *Server) sftpServerWorker(pktChan chan orderedRequest) error {
 			readonly = false
 		case *fxpOpenPkt:
 			readonly = pkt.readonly()
-		case *sshFxpExtendedPacket:
+		case *fxpExtendedPkt:
 			readonly = pkt.readonly()
 		}
 
 		// If server is operating read-only and a write operation is requested,
 		// return permission denied
 		if !readonly && svr.readOnly {
-			svr.sendPacket(orderedResponse{
-				responsePacket: statusFromError(pkt, syscall.EPERM),
-				orderid:        pkt.orderID()})
+			svr.sendPacket(orderedResponse{statusFromError(pkt, syscall.EPERM), pkt.orderID()})
 			continue
 		}
 
@@ -146,43 +111,38 @@ func (svr *Server) sftpServerWorker(pktChan chan orderedRequest) error {
 }
 
 func handlePacket(s *Server, p orderedRequest) error {
-	var rpkt responsePacket
+	var rpkt encoding.BinaryMarshaler
 	switch p := p.requestPacket.(type) {
 	case *fxpInitPkt:
 		rpkt = &fxpVersionPkt{Version: sftpProtocolVersion}
 	case *fxpStatPkt:
-		// stat the requested file
-		info, err := os.Stat(p.Path)
-		rpkt = fxpAttrPkt{
-			ID:   p.ID,
-			info: info,
-		}
-		if err != nil {
+		if info, err := os.Stat(p.Path); err != nil {
 			rpkt = statusFromError(p, err)
-		}
-	case *fxpLstatPkt:
-		// stat the requested file
-		info, err := os.Lstat(p.Path)
-		rpkt = fxpAttrPkt{
-			ID:   p.ID,
-			info: info,
-		}
-		if err != nil {
-			rpkt = statusFromError(p, err)
-		}
-	case *fxpFstatPkt:
-		f, ok := s.getHandle(p.Handle)
-		var err error = syscall.EBADF
-		var info os.FileInfo
-		if ok {
-			info, err = f.Stat()
-			rpkt = fxpAttrPkt{
+		} else {
+			rpkt = &fxpAttrPkt{
 				ID:   p.ID,
-				info: info,
+				Attr: fileAttrFromInfo(info),
 			}
 		}
-		if err != nil {
+	case *fxpLstatPkt:
+		if info, err := os.Lstat(p.Path); err != nil {
 			rpkt = statusFromError(p, err)
+		} else {
+			rpkt = &fxpAttrPkt{
+				ID:   p.ID,
+				Attr: fileAttrFromInfo(info),
+			}
+		}
+	case *fxpFstatPkt:
+		if f, ok := s.getHandle(p.Handle); !ok {
+			rpkt = statusFromError(p, syscall.EBADF)
+		} else if info, err := f.Stat(); err != nil {
+			rpkt = statusFromError(p, err)
+		} else {
+			rpkt = &fxpAttrPkt{
+				ID:   p.ID,
+				Attr: fileAttrFromInfo(info),
+			}
 		}
 	case *fxpMkdirPkt:
 		// TODO FIXME: ignore flags field
@@ -216,18 +176,11 @@ func handlePacket(s *Server, p orderedRequest) error {
 			rpkt = statusFromError(p, err)
 		}
 	case *fxpRealpathPkt:
-		f, err := filepath.Abs(p.Path)
-		f = cleanPath(f)
-		rpkt = &fxpNamePkt{
+		rpkt = &fxpStatusPkt{
 			ID: p.ID,
-			Items: []fxpNamePktItem{{
-				Name:     f,
-				LongName: f,
-				// no attributes: https://tools.ietf.org/pdf/draft-ietf-secsh-filexfer-02.pdf#35
-			}},
-		}
-		if err != nil {
-			rpkt = statusFromError(p, err)
+			StatusError: StatusError{
+				Code: ssh_FX_OP_UNSUPPORTED,
+			},
 		}
 	case *fxpOpendirPkt:
 		if stat, err := os.Stat(p.Path); err != nil {
@@ -236,11 +189,11 @@ func handlePacket(s *Server, p orderedRequest) error {
 			rpkt = statusFromError(p, &os.PathError{
 				Path: p.Path, Err: syscall.ENOTDIR})
 		} else {
-			rpkt = fxpOpenPkt{
+			rpkt = (&fxpOpenPkt{
 				ID:     p.ID,
 				Path:   p.Path,
 				PFlags: PFlagRead,
-			}.respond(s)
+			}).respond(s)
 		}
 	case *fxpReadPkt:
 		var err error = syscall.EBADF
@@ -274,7 +227,7 @@ func handlePacket(s *Server, p orderedRequest) error {
 		return errors.Errorf("unexpected packet type %T", p)
 	}
 
-	s.pktMgr.readyPacket(s.pktMgr.newOrderedResponse(rpkt, p.orderID()))
+	s.pktMgr.readyPacket(orderedResponse{rpkt, p.orderID()})
 	return nil
 }
 
@@ -307,7 +260,7 @@ func (svr *Server) Serve() error {
 		if err != nil {
 			switch errors.Cause(err) {
 			case errUnknownExtendedPacket:
-				if err := svr.serverConn.sendError(pkt, ErrSshFxOpUnsupported); err != nil {
+				if err := svr.sendError(pkt, ErrSshFxOpUnsupported); err != nil {
 					debug("failed to send err packet: %v", err)
 					svr.conn.Close() // shuts down recvPacket
 					break
@@ -327,7 +280,6 @@ func (svr *Server) Serve() error {
 
 	// close any still-open files
 	for handle, file := range svr.openFiles {
-		fmt.Fprintf(svr.debugStream, "sftp server file with handle %q left open: %v\n", handle, file.Name())
 		file.Close()
 	}
 	return err // error from recvPacket
@@ -434,48 +386,27 @@ func (p *fxpSetstatPkt) respond(svr *Server) responsePacket {
 	return statusFromError(p, err)
 }
 
-func (p fxpFsetstatPkt) respond(svr *Server) responsePacket {
+func (p *fxpFsetstatPkt) respond(svr *Server) responsePacket {
 	f, ok := svr.getHandle(p.Handle)
 	if !ok {
 		return statusFromError(p, syscall.EBADF)
 	}
 
-	// additional unmarshalling is required for each possibility here
-	b := p.Attrs.([]byte)
+	attr := p.Attr
 	var err error
 
 	debug("fsetstat name \"%s\"", f.Name())
-	if (p.Flags & attrFlagSize) != 0 {
-		var size uint64
-		if size, b, err = unmarshalUint64Safe(b); err == nil {
-			err = f.Truncate(int64(size))
-		}
+	if attr.Flags&attrFlagSize != 0 {
+		err = f.Truncate(int64(attr.Size))
 	}
-	if (p.Flags & attrFlagPermissions) != 0 {
-		var mode uint32
-		if mode, b, err = unmarshalUint32Safe(b); err == nil {
-			err = f.Chmod(os.FileMode(mode))
-		}
+	if err == nil && attr.Flags&attrFlagPermissions != 0 {
+		err = f.Chmod(attr.Perms)
 	}
-	if (p.Flags & attrFlagAcModTime) != 0 {
-		var atime uint32
-		var mtime uint32
-		if atime, b, err = unmarshalUint32Safe(b); err != nil {
-		} else if mtime, b, err = unmarshalUint32Safe(b); err != nil {
-		} else {
-			atimeT := time.Unix(int64(atime), 0)
-			mtimeT := time.Unix(int64(mtime), 0)
-			err = os.Chtimes(f.Name(), atimeT, mtimeT)
-		}
+	if err == nil && attr.Flags&attrFlagAcModTime != 0 {
+		err = os.Chtimes(f.Name(), attr.AcTime, attr.ModTime)
 	}
-	if (p.Flags & attrFlagUIDGID) != 0 {
-		var uid uint32
-		var gid uint32
-		if uid, b, err = unmarshalUint32Safe(b); err != nil {
-		} else if gid, _, err = unmarshalUint32Safe(b); err != nil {
-		} else {
-			err = f.Chown(int(uid), int(gid))
-		}
+	if err == nil && attr.Flags&attrFlagUIDGID != 0 {
+		err = f.Chown(int(attr.UID), int(attr.GID))
 	}
 
 	return statusFromError(p, err)
@@ -496,7 +427,7 @@ func translateErrno(errno syscall.Errno) uint32 {
 }
 
 func statusFromError(p ider, err error) *fxpStatusPkt {
-	ret := fxpStatusPkt{
+	ret := &fxpStatusPkt{
 		ID: p.id(),
 		StatusError: StatusError{
 			// ssh_FX_OK                = 0

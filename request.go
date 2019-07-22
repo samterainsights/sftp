@@ -22,7 +22,7 @@ type Request struct {
 	Method   string
 	Filepath string
 	PFlags   pflag
-	Attrs    []byte // convert to sub-struct
+	Attrs    *FileAttr
 	Target   string // for renames and sym-links
 	handle   string
 	// reader/writer/readdir from handlers
@@ -48,22 +48,24 @@ func requestFromPacket(ctx context.Context, pkt hasPath) *Request {
 
 	switch p := pkt.(type) {
 	case *fxpOpenPkt:
-		request.Flags = p.Pflags
+		request.PFlags = p.PFlags
 	case *fxpSetstatPkt:
-		request.Flags = p.Flags
-		request.Attrs = p.Attrs.([]byte)
+		request.Attrs = p.Attr
 	case *fxpRenamePkt:
-		request.Target = cleanPath(p.Newpath)
+		request.Target = path.Clean(p.NewPath)
 	case *fxpSymlinkPkt:
-		request.Target = cleanPath(p.Linkpath)
+		request.Target = path.Clean(p.LinkPath)
 	}
 	return request
 }
 
 // NewRequest creates a new Request object.
 func NewRequest(method, path string) *Request {
-	return &Request{Method: method, Filepath: cleanPath(path),
-		state: state{RWMutex: new(sync.RWMutex)}}
+	return &Request{
+		Method:   method,
+		Filepath: path.Clean(path),
+		state:    state{RWMutex: new(sync.RWMutex)},
+	}
 }
 
 // shallow copy of existing request
@@ -170,9 +172,8 @@ func (r *Request) call(h RequestHandler, pkt requestPacket) responsePacket {
 			return statusFromError(pkt, err)
 		}
 		return &fxpDataPkt{
-			ID:     pkt.id(),
-			Length: uint32(n),
-			Data:   data[:n],
+			ID:   pkt.id(),
+			Data: data[:n],
 		}
 
 	case "Put":
@@ -189,8 +190,7 @@ func (r *Request) call(h RequestHandler, pkt requestPacket) responsePacket {
 
 	case "Setstat":
 		if p, ok := pkt.(*fxpFsetstatPkt); ok {
-			r.Flags = p.Flags
-			r.Attrs = p.Attrs.([]byte)
+			r.Attrs = p.Attr
 		}
 		return statusFromError(pkt, h.Setstat(r))
 
@@ -230,13 +230,13 @@ func (r *Request) call(h RequestHandler, pkt requestPacket) responsePacket {
 			return statusFromError(pkt, io.EOF)
 		}
 		dirname := filepath.ToSlash(path.Base(r.Filepath))
-		ret := &fxpNamePkt{ID: pkt.id()}
+		ret := &fxpNamePkt{pkt.id(), make([]fxpNamePktItem, 0, len(finfo))}
 
 		for _, fi := range finfo {
-			ret.NameAttrs = append(ret.NameAttrs, fxpNamePktItem{
+			ret.Items = append(ret.Items, fxpNamePktItem{
 				Name:     fi.Name(),
 				LongName: runLs(dirname, fi),
-				Attrs:    []interface{}{fi},
+				Attr:     fileAttrFromInfo(fi),
 			})
 		}
 		return ret
@@ -246,7 +246,7 @@ func (r *Request) call(h RequestHandler, pkt requestPacket) responsePacket {
 		if err != nil {
 			return statusFromError(pkt, err)
 		}
-		return &fxpAttrPkt{pkt.id(), info}
+		return &fxpAttrPkt{pkt.id(), fileAttrFromInfo(info)}
 
 	case "Readlink":
 		info, err := h.ReadLink(r)
@@ -256,10 +256,10 @@ func (r *Request) call(h RequestHandler, pkt requestPacket) responsePacket {
 		filename := info.Name()
 		return &fxpNamePkt{
 			ID: pkt.id(),
-			NameAttrs: []fxpNamePktItem{{
+			Items: []fxpNamePktItem{{
 				Name:     filename,
 				LongName: filename,
-				Attrs:    emptyFileAttr,
+				Attr:     &FileAttr{},
 			}},
 		}
 
@@ -270,23 +270,22 @@ func (r *Request) call(h RequestHandler, pkt requestPacket) responsePacket {
 
 // Additional initialization for Open packets
 func (r *Request) open(h RequestHandler, pkt requestPacket) responsePacket {
-	flags := r.Pflags()
 	var err error
-	switch {
-	case flags.Write, flags.Append, flags.Creat, flags.Trunc:
+	if r.PFlags&(PFlagWrite|PFlagAppend|PFlagCreate|PFlagTruncate) != 0 {
 		r.Method = "Put"
 		r.state.writerAt, err = h.OpenFile(r)
-	case flags.Read:
+	} else if r.PFlags&PFlagRead != 0 {
 		r.Method = "Get"
 		r.state.readerAt, err = h.Get(r)
-	default:
-		return statusFromError(pkt, errors.New("bad file flags"))
+	} else {
+		err = errors.New("bad file flags")
 	}
 	if err != nil {
 		return statusFromError(pkt, err)
 	}
 	return &fxpHandlePkt{ID: pkt.id(), Handle: r.handle}
 }
+
 func (r *Request) opendir(h RequestHandler, pkt requestPacket) responsePacket {
 	var err error
 	r.Method = "List"
@@ -309,7 +308,7 @@ func packetData(p requestPacket) (data []byte, offset int64, length uint32) {
 		offset = int64(p.Offset)
 	case *fxpWritePkt:
 		data = p.Data
-		length = p.Length
+		length = uint32(len(p.Data))
 		offset = int64(p.Offset)
 	}
 	return

@@ -192,9 +192,9 @@ func (p sshFxpTestBadExtendedPacket) /*FIXME(samterainsights): encode length pre
 
 	b := make([]byte, 0, l)
 	b = append(b, ssh_FXP_EXTENDED)
-	b = marshalUint32(b, p.ID)
-	b = marshalString(b, p.Extension)
-	b = marshalString(b, p.Data)
+	b = appendU32(b, p.ID)
+	b = appendStr(b, p.Extension)
+	b = appendStr(b, p.Data)
 	return b, nil
 }
 

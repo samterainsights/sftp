@@ -9,17 +9,15 @@ import (
 	"syscall"
 )
 
-func (p fxpExtStatvfsPkt) respond(svr *Server) responsePacket {
+func (p *fxpExtStatvfsPkt) respond(svr *Server) responsePacket {
 	stat := &syscall.Statfs_t{}
 	if err := syscall.Statfs(p.Path, stat); err != nil {
 		return statusFromError(p, err)
 	}
 
-	retPkt, err := statvfsFromStatfst(stat)
+	vfs, err := statvfsFromStatfst(stat)
 	if err != nil {
 		return statusFromError(p, err)
 	}
-	retPkt.ID = p.ID
-
-	return retPkt
+	return &fxpExtVfsPkt{p.ID, *vfs}
 }

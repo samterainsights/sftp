@@ -76,7 +76,7 @@ func (c *clientConn) recv() error {
 		if err != nil {
 			return err
 		}
-		sid, _ := unmarshalUint32(data)
+		sid, _, _ := takeU32(data)
 		c.Lock()
 		ch, ok := c.inflight[sid]
 		delete(c.inflight, sid)
@@ -137,10 +137,6 @@ func (c *clientConn) broadcastErr(err error) {
 	close(c.closed)
 }
 
-type serverConn struct {
-	conn
-}
-
-func (s *serverConn) sendError(p ider, err error) error {
-	return s.sendPacket(statusFromError(p, err))
+func (c *conn) sendError(p ider, err error) error {
+	return c.sendPacket(statusFromError(p, err))
 }

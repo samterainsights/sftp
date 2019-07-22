@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"syscall"
@@ -14,6 +13,16 @@ import (
 )
 
 var maxTxPacket uint32 = 1 << 15
+
+// A FileHandle is an TODO(samterainsights)
+type FileHandle interface {
+	os.FileInfo
+	io.ReaderAt
+	io.WriterAt
+	io.Closer
+
+	Setstat(*FileAttr) error
+}
 
 // ListerAt does for file lists what io.ReaderAt does for files.
 // ListAt should return the number of entries copied and an io.EOF
@@ -29,87 +38,89 @@ type ListerAt interface {
 // Two implementations are provided by this library: an in-memory filesystem and
 // a wrapper around the OS filesystem.
 type RequestHandler interface {
-	Get(*Request) (io.ReaderAt, error)
-	OpenFile(*Request) (io.WriterAt, error)
-	List(*Request) (ListerAt, error)
-	Stat(*Request) (os.FileInfo, error)
-	ReadLink(*Request) (os.FileInfo, error)
-	Setstat(*Request) error
-	Rename(*Request) error
-	Rmdir(*Request) error
-	Mkdir(*Request) error
-	Symlink(*Request) error
-	Remove(*Request) error
+	// OpenFile should behave identically to os.OpenFile. If the returned FileHandle
+	// has a Handle() method which returns a string, that handle will be used
+	// internally for the SFTP protocol. Otherwise, the filepath will be used.
+	OpenFile(string, int, os.FileMode) (FileHandle, error)
+
+	// Mkdir creates a new directory. An error should be returned if the specified
+	// path already exists.
+	Mkdir(string, *FileAttr) error
+
+	// OpenDir opens a directory for scanning. An error should be returned if the
+	// given path is not a directory. If the returned ListerAt can be cast to an
+	// io.Closer, its Close method will be called once the SFTP client is done
+	// scanning.
+	OpenDir(string) (ListerAt, error)
+
+	// Rename renames the given path. An error should be returned if the path does
+	// not exist or the new path already exists.
+	Rename(path, to string) error
+
+	// Stat retrieves info about the given path, following symlinks.
+	Stat(string) (os.FileInfo, error)
+
+	// Lstat retrieves info about the given path, and does not follow symlinks,
+	// i.e. it can return information about symlinks themselves.
+	Lstat(string) (os.FileInfo, error)
+
+	// Setstat set attributes for the given path.
+	Setstat(string, *FileAttr) error
+
+	// Symlink creates a symlink with the given target.
+	Symlink(path, target string) error
+
+	// ReadLink returns the target path of the given symbolic link.
+	ReadLink(string) (string, error)
+
+	// Rmdir removes the specified directory. An error should be returned if the
+	// given path does not exists, is not a directory, or has children.
+	Rmdir(string) error
+
+	// Remove removes the specified file. An error should be returned if the path
+	// does not exist or it is a directory.
+	Remove(string) error
 }
 
-// RequestServer abstracts the sftp protocol with an http request-like protocol
-type RequestServer struct {
-	*serverConn
-	Handlers        RequestHandler
+// server abstracts the sftp protocol with an http request-like protocol
+type server struct {
+	*conn
+	RequestHandler
+
 	pktMgr          *packetManager
 	openRequests    map[string]*Request
 	openRequestLock sync.RWMutex
 	handleCount     int
 }
 
-// NewRequestServer creates/allocates/returns new RequestServer.
-// Normally there there will be one server per user-session.
-func NewRequestServer(rwc io.ReadWriteCloser, h RequestHandler) *RequestServer {
-	svrConn := &serverConn{conn{
-		Reader:      rwc,
-		WriteCloser: rwc,
-	}}
-	return &RequestServer{
-		serverConn:   svrConn,
-		Handlers:     h,
-		pktMgr:       newPktMgr(svrConn),
-		openRequests: make(map[string]*Request),
+type noopCloseRWC struct {
+	io.ReadWriter
+}
+
+func (rwc noopCloseRWC) Close() error { return nil }
+
+// Serve the SFTP protocol over a connection. Generally you will want to serve it on top
+// of an SSH "session" channel, however it could also be served over TLS, etc. Note that
+// SFTP has no security provisions so it should always be layered on top of a secure
+// connection.
+func Serve(transport io.ReadWriter, handler RequestHandler) error {
+	conn := &conn{
+		Reader:      transport,
+		WriteCloser: noopCloseRWC{transport},
 	}
-}
-
-// New Open packet/Request
-func (rs *RequestServer) nextRequest(r *Request) string {
-	rs.openRequestLock.Lock()
-	defer rs.openRequestLock.Unlock()
-	rs.handleCount++
-	handle := strconv.Itoa(rs.handleCount)
-	r.handle = handle
-	rs.openRequests[handle] = r
-	return handle
-}
-
-// Returns Request from openRequests, bool is false if it is missing.
-//
-// The Requests in openRequests work essentially as open file descriptors that
-// you can do different things with. What you are doing with it are denoted by
-// the first packet of that type (read/write/etc).
-func (rs *RequestServer) getRequest(handle string) (*Request, bool) {
-	rs.openRequestLock.RLock()
-	defer rs.openRequestLock.RUnlock()
-	r, ok := rs.openRequests[handle]
-	return r, ok
-}
-
-// Close the Request and clear from openRequests map
-func (rs *RequestServer) closeRequest(handle string) error {
-	rs.openRequestLock.Lock()
-	defer rs.openRequestLock.Unlock()
-	if r, ok := rs.openRequests[handle]; ok {
-		delete(rs.openRequests, handle)
-		return r.close()
+	rs := &server{
+		conn:           conn,
+		RequestHandler: handler,
+		pktMgr:         newPktMgr(conn),
+		openRequests:   make(map[string]*Request),
 	}
-	return syscall.EBADF
-}
 
-// Close the read/write/closer to trigger exiting the main server loop
-func (rs *RequestServer) Close() error { return rs.conn.Close() }
-
-// Serve requests for user session
-func (rs *RequestServer) Serve() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	var wg sync.WaitGroup
-	runWorker := func(ch chan orderedRequest) {
+
+	pktChan := rs.pktMgr.workerChan(func(ch chan orderedRequest) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -117,11 +128,9 @@ func (rs *RequestServer) Serve() error {
 				rs.conn.Close() // shuts down recvPacket
 			}
 		}()
-	}
-	pktChan := rs.pktMgr.workerChan(runWorker)
+	})
 
 	var err error
-	var pkt requestPacket
 	var pktType uint8
 	var pktBytes []byte
 	for {
@@ -130,11 +139,11 @@ func (rs *RequestServer) Serve() error {
 			break
 		}
 
-		pkt, err = makePacket(fxp(pktType), pktBytes)
-		if err != nil {
+		var pkt requestPacket
+		if pkt, err = makePacket(fxp(pktType), pktBytes); err != nil {
 			switch errors.Cause(err) {
 			case errUnknownExtendedPacket:
-				if err := rs.serverConn.sendError(pkt, ErrSshFxOpUnsupported); err != nil {
+				if err := rs.sendError(pkt, ErrSshFxOpUnsupported); err != nil {
 					debug("failed to send err packet: %v", err)
 					rs.conn.Close() // shuts down recvPacket
 					break
@@ -162,19 +171,64 @@ func (rs *RequestServer) Serve() error {
 	return err
 }
 
-func (rs *RequestServer) packetWorker(
+// New Open packet/Request
+func (rs *server) nextRequest(r *Request) string {
+	rs.openRequestLock.Lock()
+	defer rs.openRequestLock.Unlock()
+	rs.handleCount++
+	handle := strconv.Itoa(rs.handleCount)
+	r.handle = handle
+	rs.openRequests[handle] = r
+	return handle
+}
+
+// Returns Request from openRequests, bool is false if it is missing.
+//
+// The Requests in openRequests work essentially as open file descriptors that
+// you can do different things with. What you are doing with it are denoted by
+// the first packet of that type (read/write/etc).
+func (rs *server) getRequest(handle string) (*Request, bool) {
+	rs.openRequestLock.RLock()
+	defer rs.openRequestLock.RUnlock()
+	r, ok := rs.openRequests[handle]
+	return r, ok
+}
+
+// Close the Request and clear from openRequests map
+func (rs *server) closeRequest(handle string) error {
+	rs.openRequestLock.Lock()
+	defer rs.openRequestLock.Unlock()
+	if r, ok := rs.openRequests[handle]; ok {
+		delete(rs.openRequests, handle)
+		return r.close()
+	}
+	return syscall.EBADF
+}
+
+// Close the read/write/closer to trigger exiting the main server loop
+func (rs *server) Close() error { return rs.conn.Close() }
+
+func (rs *server) packetWorker(
 	ctx context.Context, pktChan chan orderedRequest,
 ) error {
 	for pkt := range pktChan {
 		var rpkt responsePacket
 		switch pkt := pkt.requestPacket.(type) {
 		case *fxpInitPkt:
-			rpkt = fxpVersionPkt{Version: sftpProtocolVersion}
+			rpkt = &fxpVersionPkt{Version: sftpProtocolVersion}
 		case *fxpClosePkt:
 			handle := pkt.getHandle()
 			rpkt = statusFromError(pkt, rs.closeRequest(handle))
 		case *fxpRealpathPkt:
-			rpkt = cleanPacketPath(pkt)
+			path := path.Clean(pkt.Path)
+			rpkt = &fxpNamePkt{
+				ID: pkt.id(),
+				Items: []fxpNamePktItem{{
+					Name:     path,
+					LongName: path,
+					Attr:     &FileAttr{},
+				}},
+			}
 		case *fxpOpendirPkt:
 			request := requestFromPacket(ctx, pkt)
 			rs.nextRequest(request)
@@ -208,30 +262,7 @@ func (rs *RequestServer) packetWorker(
 			return errors.Errorf("unexpected packet type %T", pkt)
 		}
 
-		rs.pktMgr.readyPacket(
-			rs.pktMgr.newOrderedResponse(rpkt, pkt.orderID()))
+		rs.pktMgr.readyPacket(orderedResponse{rpkt, pkt.orderID()})
 	}
 	return nil
-}
-
-// clean and return name packet for file
-func cleanPacketPath(pkt *fxpRealpathPkt) responsePacket {
-	path := cleanPath(pkt.getPath())
-	return &fxpNamePkt{
-		ID: pkt.id(),
-		NameAttrs: []fxpNamePktItem{{
-			Name:     path,
-			LongName: path,
-			Attrs:    emptyFileAttr,
-		}},
-	}
-}
-
-// Makes sure we have a clean POSIX (/) absolute path to work with
-func cleanPath(p string) string {
-	p = filepath.ToSlash(p)
-	if !filepath.IsAbs(p) {
-		p = "/" + p
-	}
-	return path.Clean(p)
 }

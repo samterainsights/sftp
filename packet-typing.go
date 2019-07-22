@@ -42,9 +42,9 @@ func (p fxpRealpathPkt) getPath() string   { return p.Path }
 func (p fxpMkdirPkt) getPath() string      { return p.Path }
 func (p fxpSetstatPkt) getPath() string    { return p.Path }
 func (p fxpExtStatvfsPkt) getPath() string { return p.Path }
-func (p fxpRemovePkt) getPath() string     { return p.Filename }
-func (p fxpRenamePkt) getPath() string     { return p.Oldpath }
-func (p fxpSymlinkPkt) getPath() string    { return p.Targetpath }
+func (p fxpRemovePkt) getPath() string     { return p.Path }
+func (p fxpRenamePkt) getPath() string     { return p.OldPath }
+func (p fxpSymlinkPkt) getPath() string    { return p.TargetPath }
 func (p fxpOpendirPkt) getPath() string    { return p.Path }
 func (p fxpOpenPkt) getPath() string       { return p.Path }
 
@@ -70,7 +70,7 @@ func (p fxpSymlinkPkt) notReadOnly()  {}
 func makePacket(pktType fxp, pktData []byte) (requestPacket, error) {
 	var pkt requestPacket
 
-	switch p.pktType {
+	switch pktType {
 	case ssh_FXP_INIT:
 		pkt = &fxpInitPkt{}
 	case ssh_FXP_LSTAT:
@@ -110,9 +110,9 @@ func makePacket(pktType fxp, pktData []byte) (requestPacket, error) {
 	case ssh_FXP_SYMLINK:
 		pkt = &fxpSymlinkPkt{}
 	case ssh_FXP_EXTENDED:
-		pkt = &sshFxpExtendedPacket{}
+		pkt = &fxpExtendedPkt{}
 	default:
-		return nil, errors.Errorf("unknown packet type: %d", p.pktType)
+		return nil, errors.Errorf("unknown packet type: %d", pktType)
 	}
 
 	// If an error occurs, still return the partially unpacked packet to allow callers
