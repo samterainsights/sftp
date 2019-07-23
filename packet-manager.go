@@ -55,7 +55,7 @@ func (p orderedRequest) orderID() uint32       { return p.orderid }
 func (p orderedRequest) setOrderID(oid uint32) { p.orderid = oid }
 
 type orderedResponse struct {
-	encoding.BinaryMarshaler
+	responsePacket
 	orderid uint32
 }
 

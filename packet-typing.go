@@ -71,7 +71,7 @@ func makePacket(pktType fxp, pktData []byte) (requestPacket, error) {
 	var pkt requestPacket
 
 	switch pktType {
-	case ssh_FXP_INIT:
+	case fxpInit:
 		pkt = &fxpInitPkt{}
 	case ssh_FXP_LSTAT:
 		pkt = &fxpLstatPkt{}

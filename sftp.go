@@ -4,9 +4,16 @@ package sftp
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/pkg/errors"
 )
+
+// ProtocolVersion is the SFTP version implemented by this library. See the
+// [spec](http://tools.ietf.org/html/draft-ietf-secsh-filexfer-02) and the
+// [OpenSSH extensions](https://github.com/openssh/openssh-portable/blob/master/PROTOCOL#L344)
+// for reference.
+const ProtocolVersion = 3
 
 const (
 	ssh_FXP_INIT           = 1
@@ -101,6 +108,32 @@ const (
 	// already exists.
 	PFlagExclusive
 )
+
+// os converts SFTP pflags to file open flags recognized by the os package.
+func (pf pflag) os() (f int) {
+	if pf&PFlagRead != 0 {
+		if pf&PFlagWrite != 0 {
+			f |= os.O_RDWR
+		} else {
+			f |= os.O_RDONLY
+		}
+	} else if pf&PFlagWrite != 0 {
+		f |= os.O_WRONLY
+	}
+	if pf&PFlagAppend != 0 {
+		f |= os.O_APPEND
+	}
+	if pf&PFlagCreate != 0 {
+		f |= os.O_CREATE
+	}
+	if pf&PFlagTruncate != 0 {
+		f |= os.O_TRUNC
+	}
+	if pf&PFlagExclusive != 0 {
+		f |= os.O_EXCL
+	}
+	return
+}
 
 type fxp uint8
 

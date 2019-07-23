@@ -16,17 +16,97 @@ import (
 	"time"
 )
 
-// MemFS creates a new in-memory filesystem which can serve as the backend for
-// a Server. Plan is to expose the underlying struct in the future so user code
-// can actually extract files the client has uploaded and do stuff with them.
+// MemFS creates a new in-memory filesystem capable of servicing SFTP requests.
 func MemFS() RequestHandler {
-	return &root{
+	return &memFS{
 		memFile: newMemFile("/", true),
 		files:   make(map[string]*memFile),
 	}
 }
 
-func (fs *root) Get(r *Request) (io.ReaderAt, error) {
+// OpenFile should behave identically to os.OpenFile.
+func (fs *memFS) OpenFile(string, int, os.FileMode) (FileHandle, error) {
+
+}
+
+// Mkdir creates a new directory. An error should be returned if the specified
+// path already exists.
+func (fs *memFS) Mkdir(string, *FileAttr) error {
+
+}
+
+// OpenDir opens a directory for scanning. An error should be returned if the
+// given path is not a directory. If the returned DirReader can be cast to an
+// io.Closer, its Close method will be called once the SFTP client is done
+// scanning.
+func (fs *memFS) OpenDir(string) (DirReader, error) {
+
+}
+
+// Rename renames the given path. An error should be returned if the path does
+// not exist or the new path already exists.
+func (fs *memFS) Rename(path, to string) error {
+
+}
+
+// Stat retrieves info about the given path, following symlinks.
+func (fs *memFS) Stat(string) (os.FileInfo, error) {
+
+}
+
+// Lstat retrieves info about the given path, and does not follow symlinks,
+// i.e. it can return information about symlinks themselves.
+func (fs *memFS) Lstat(string) (os.FileInfo, error) {
+
+}
+
+// Setstat set attributes for the given path.
+func (fs *memFS) Setstat(string, *FileAttr) error {
+
+}
+
+// Symlink creates a symlink with the given target.
+func (fs *memFS) Symlink(path, target string) error {
+
+}
+
+// ReadLink returns the target path of the given symbolic link.
+func (fs *memFS) ReadLink(string) (string, error) {
+	if fs.mockErr != nil {
+		return nil, fs.mockErr
+	}
+
+	fs.filesLock.Lock()
+	defer fs.filesLock.Unlock()
+
+	file, err := fs.fetch(r.Filepath)
+	if err != nil {
+		return nil, err
+	}
+	if file.symlink != "" {
+		return fs.fetch(file.symlink)
+	}
+	return file, nil
+}
+
+// Rmdir removes the specified directory. An error should be returned if the
+// given path does not exists, is not a directory, or has children.
+func (fs *memFS) Rmdir(string) error {
+
+}
+
+// Remove removes the specified file. An error should be returned if the path
+// does not exist or it is a directory.
+func (fs *memFS) Remove(string) error {
+
+}
+
+// RealPath is responsible for producing an absolute path from a relative one.
+func (fs *memFS) RealPath(string) (string, error) {
+
+}
+
+func (fs *memFS) Get(r *Request) (io.ReaderAt, error) {
 	if fs.mockErr != nil {
 		return nil, fs.mockErr
 	}
@@ -46,7 +126,7 @@ func (fs *root) Get(r *Request) (io.ReaderAt, error) {
 	return file.ReaderAt()
 }
 
-func (fs *root) OpenFile(r *Request) (io.WriterAt, error) {
+func (fs *memFS) OpenFile(r *Request) (io.WriterAt, error) {
 	if fs.mockErr != nil {
 		return nil, fs.mockErr
 	}
@@ -68,12 +148,12 @@ func (fs *root) OpenFile(r *Request) (io.WriterAt, error) {
 	return file.WriterAt()
 }
 
-func (fs *root) Setstat(r *Request) error {
+func (fs *memFS) Setstat(r *Request) error {
 	// No-op, just return the mock error for testing (might be nil)
 	return fs.mockErr
 }
 
-func (fs *root) Rename(r *Request) error {
+func (fs *memFS) Rename(r *Request) error {
 	if fs.mockErr != nil {
 		return fs.mockErr
 	}
@@ -96,7 +176,7 @@ func (fs *root) Rename(r *Request) error {
 	return nil
 }
 
-func (fs *root) Rmdir(r *Request) error {
+func (fs *memFS) Rmdir(r *Request) error {
 	if fs.mockErr != nil {
 		return fs.mockErr
 	}
@@ -113,7 +193,7 @@ func (fs *root) Rmdir(r *Request) error {
 	return nil
 }
 
-func (fs *root) Mkdir(r *Request) error {
+func (fs *memFS) Mkdir(r *Request) error {
 	if fs.mockErr != nil {
 		return fs.mockErr
 	}
@@ -130,7 +210,7 @@ func (fs *root) Mkdir(r *Request) error {
 	return nil
 }
 
-func (fs *root) Symlink(r *Request) error {
+func (fs *memFS) Symlink(r *Request) error {
 	if fs.mockErr != nil {
 		return fs.mockErr
 	}
@@ -149,7 +229,7 @@ func (fs *root) Symlink(r *Request) error {
 	return nil
 }
 
-func (fs *root) Remove(r *Request) error {
+func (fs *memFS) Remove(r *Request) error {
 	if fs.mockErr != nil {
 		return fs.mockErr
 	}
@@ -181,7 +261,7 @@ func (f listerat) ListAt(ls []os.FileInfo, offset int64) (int, error) {
 	return n, nil
 }
 
-func (fs *root) List(r *Request) (ListerAt, error) {
+func (fs *memFS) List(r *Request) (DirReader, error) {
 	if fs.mockErr != nil {
 		return nil, fs.mockErr
 	}
@@ -210,7 +290,7 @@ func (fs *root) List(r *Request) (ListerAt, error) {
 	return listerat(list), nil
 }
 
-func (fs *root) Stat(r *Request) (os.FileInfo, error) {
+func (fs *memFS) Stat(r *Request) (os.FileInfo, error) {
 	if fs.mockErr != nil {
 		return nil, fs.mockErr
 	}
@@ -221,27 +301,8 @@ func (fs *root) Stat(r *Request) (os.FileInfo, error) {
 	return fs.fetch(r.Filepath)
 }
 
-func (fs *root) ReadLink(r *Request) (os.FileInfo, error) {
-	if fs.mockErr != nil {
-		return nil, fs.mockErr
-	}
-
-	_ = r.WithContext(r.Context()) // initialize context for deadlock testing
-	fs.filesLock.Lock()
-	defer fs.filesLock.Unlock()
-
-	file, err := fs.fetch(r.Filepath)
-	if err != nil {
-		return nil, err
-	}
-	if file.symlink != "" {
-		return fs.fetch(file.symlink)
-	}
-	return file, nil
-}
-
 // In memory file-system-y thing that the Hanlders live on
-type root struct {
+type memFS struct {
 	*memFile
 	files     map[string]*memFile
 	filesLock sync.Mutex
@@ -250,11 +311,11 @@ type root struct {
 
 // Set a mocked error that the next handler call will return.
 // Set to nil to reset for no error.
-func (fs *root) returnErr(err error) {
+func (fs *memFS) returnErr(err error) {
 	fs.mockErr = err
 }
 
-func (fs *root) fetch(path string) (*memFile, error) {
+func (fs *memFS) fetch(path string) (*memFile, error) {
 	if path == "/" {
 		return fs.memFile, nil
 	}

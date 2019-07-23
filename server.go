@@ -7,12 +7,17 @@ import (
 	"path"
 	"strconv"
 	"sync"
-	"syscall"
+	"sync/atomic"
 
 	"github.com/pkg/errors"
 )
 
 var maxTxPacket uint32 = 1 << 15
+var errNoSuchHandle = errors.New("invalid handle")
+
+// MaxReaddirItems is the maximum number of files to return for a single
+// SSH_FXP_READDIR request.
+const MaxReaddirItems = 100
 
 // A FileHandle is an TODO(samterainsights)
 type FileHandle interface {
@@ -24,23 +29,25 @@ type FileHandle interface {
 	Setstat(*FileAttr) error
 }
 
-// ListerAt does for file lists what io.ReaderAt does for files.
-// ListAt should return the number of entries copied and an io.EOF
-// error if at end of list. This is testable by comparing how many you
-// copied to how many could be copied (eg. n < len(ls) below).
-// The copy() builtin is best for the copying.
-// Note in cases of an error, the error text will be sent to the client.
-type ListerAt interface {
-	ListAt([]os.FileInfo, int64) (int, error)
+// DirReader is the interface that wraps the basic ReadEntries method.
+//
+// ReadEntries reads the contents of the associated directory, returning
+// information identical to what would be returned by calling Lstat for
+// each of the child paths.
+//
+// ReadEntries attempts to read len(dst) entries from the directory,
+// returning the number of entries copied and a non-nil error if
+// copied < len(dst). Should return io.EOF if there are simply no more
+// entries left.
+type DirReader interface {
+	ReadEntries(dst []os.FileInfo) (copied int, err error)
 }
 
 // RequestHandler is responsible for handling the various kinds of SFTP requests.
 // Two implementations are provided by this library: an in-memory filesystem and
 // a wrapper around the OS filesystem.
 type RequestHandler interface {
-	// OpenFile should behave identically to os.OpenFile. If the returned FileHandle
-	// has a Handle() method which returns a string, that handle will be used
-	// internally for the SFTP protocol. Otherwise, the filepath will be used.
+	// OpenFile should behave identically to os.OpenFile.
 	OpenFile(string, int, os.FileMode) (FileHandle, error)
 
 	// Mkdir creates a new directory. An error should be returned if the specified
@@ -48,10 +55,10 @@ type RequestHandler interface {
 	Mkdir(string, *FileAttr) error
 
 	// OpenDir opens a directory for scanning. An error should be returned if the
-	// given path is not a directory. If the returned ListerAt can be cast to an
+	// given path is not a directory. If the returned DirReader can be cast to an
 	// io.Closer, its Close method will be called once the SFTP client is done
 	// scanning.
-	OpenDir(string) (ListerAt, error)
+	OpenDir(string) (DirReader, error)
 
 	// Rename renames the given path. An error should be returned if the path does
 	// not exist or the new path already exists.
@@ -80,6 +87,9 @@ type RequestHandler interface {
 	// Remove removes the specified file. An error should be returned if the path
 	// does not exist or it is a directory.
 	Remove(string) error
+
+	// RealPath is responsible for producing an absolute path from a relative one.
+	RealPath(string) (string, error)
 }
 
 // server abstracts the sftp protocol with an http request-like protocol
@@ -87,10 +97,12 @@ type server struct {
 	*conn
 	RequestHandler
 
-	pktMgr          *packetManager
-	openRequests    map[string]*Request
-	openRequestLock sync.RWMutex
-	handleCount     int
+	pktMgr       *packetManager
+	openFiles    map[string]FileHandle
+	openFilesMtx sync.RWMutex
+	openDirs     map[string]DirReader
+	openDirsMtx  sync.RWMutex
+	handleCtr    uint32
 }
 
 type noopCloseRWC struct {
@@ -112,7 +124,8 @@ func Serve(transport io.ReadWriter, handler RequestHandler) (err error) {
 		conn:           conn,
 		RequestHandler: handler,
 		pktMgr:         newPktMgr(conn),
-		openRequests:   make(map[string]*Request),
+		openFiles:      make(map[string]FileHandle),
+		openDirs:       make(map[string]DirReader),
 	}
 	defer rs.cleanup()
 
@@ -137,7 +150,7 @@ func Serve(transport io.ReadWriter, handler RequestHandler) (err error) {
 	var pktType uint8
 	var pktBytes []byte
 	for {
-		if pktType, pktBytes, err = rs.recvPacket(); err != nil {
+		if pktType, pktBytes, err = readPacket(conn); err != nil {
 			return
 		}
 
@@ -161,95 +174,216 @@ func Serve(transport io.ReadWriter, handler RequestHandler) (err error) {
 	}
 }
 
-// New Open packet/Request
-func (rs *server) nextRequest(r *Request) string {
-	rs.openRequestLock.Lock()
-	defer rs.openRequestLock.Unlock()
-	rs.handleCount++
-	handle := strconv.Itoa(rs.handleCount)
-	r.handle = handle
-	rs.openRequests[handle] = r
-	return handle
+func (rs *server) nextHandle() string {
+	handle := atomic.AddUint32(&rs.handleCtr, 1)
+	return strconv.FormatUint(uint32(handle), 36)
 }
 
-// Returns Request from openRequests, bool is false if it is missing.
-//
-// The Requests in openRequests work essentially as open file descriptors that
-// you can do different things with. What you are doing with it are denoted by
-// the first packet of that type (read/write/etc).
-func (rs *server) getRequest(handle string) (*Request, bool) {
-	rs.openRequestLock.RLock()
-	defer rs.openRequestLock.RUnlock()
-	r, ok := rs.openRequests[handle]
-	return r, ok
-}
-
-// Close the Request and clear from openRequests map
-func (rs *server) closeRequest(handle string) error {
-	rs.openRequestLock.Lock()
-	defer rs.openRequestLock.Unlock()
-	if r, ok := rs.openRequests[handle]; ok {
-		delete(rs.openRequests, handle)
-		return r.close()
+func (rs *server) getFile(handle string) (FileHandle, error) {
+	rs.openFilesMtx.RLock()
+	defer rs.openFilesMtx.RUnlock()
+	if f, exists := rs.openFiles[handle]; exists {
+		return f, nil
 	}
-	return syscall.EBADF
+	return nil, errNoSuchHandle
 }
 
-// Close the read/write/closer to trigger exiting the main server loop
-func (rs *server) Close() error { return rs.conn.Close() }
+func (rs *server) closeFile(handle string) error {
+	rs.openFilesMtx.Lock()
+	defer rs.openFilesMtx.Unlock()
+	if f, exists := rs.openFiles[handle]; exists {
+		delete(rs.openFiles, handle)
+		return f.Close()
+	}
+	return errNoSuchHandle
+}
 
-func (rs *server) packetWorker(
-	ctx context.Context, pktChan chan orderedRequest,
-) error {
+func (rs *server) getDir(handle string) (DirReader, error) {
+	rs.openDirsMtx.RLock()
+	defer rs.openDirsMtx.RUnlock()
+	if d, exists := rs.openDirs[handle]; exists {
+		return d, nil
+	}
+	return nil, errNoSuchHandle
+}
+
+func (rs *server) closeDir(handle string) error {
+	rs.openDirsMtx.Lock()
+	defer rs.openDirsMtx.Unlock()
+	if d, exists := rs.openDirs[handle]; exists {
+		delete(rs.openDirs, handle)
+		if closer, ok := d.(io.Closer); ok {
+			return closer.Close()
+		}
+		return nil
+	}
+	return errNoSuchHandle
+}
+
+func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest) error {
 	for pkt := range pktChan {
 		var rpkt responsePacket
 		switch pkt := pkt.requestPacket.(type) {
 		case *fxpInitPkt:
-			rpkt = &fxpVersionPkt{Version: sftpProtocolVersion}
-		case *fxpClosePkt:
-			handle := pkt.getHandle()
-			rpkt = statusFromError(pkt, rs.closeRequest(handle))
-		case *fxpRealpathPkt:
-			path := path.Clean(pkt.Path)
-			rpkt = &fxpNamePkt{
-				ID: pkt.id(),
-				Items: []fxpNamePktItem{{
-					Name:     path,
-					LongName: path,
-					Attr:     &FileAttr{},
-				}},
-			}
-		case *fxpOpendirPkt:
-			request := requestFromPacket(ctx, pkt)
-			rs.nextRequest(request)
-			rpkt = request.opendir(rs.Handlers, pkt)
+			rpkt = &fxpVersionPkt{Version: ProtocolVersion}
+
 		case *fxpOpenPkt:
-			request := requestFromPacket(ctx, pkt)
-			rs.nextRequest(request)
-			rpkt = request.open(rs.Handlers, pkt)
+			if f, err := rs.OpenFile(pkt.Path, pkt.PFlags.os(), pkt.Attr.Perms); err != nil {
+				rpkt = statusFromError(pkt, err)
+			} else {
+				handle := rs.nextHandle()
+				rs.openFilesMtx.Lock()
+				rs.openFiles[handle] = f
+				rs.openFilesMtx.Unlock()
+				rpkt = fxpHandlePkt{pkt.ID, handle}
+			}
+
+		case *fxpClosePkt:
+			err := rs.closeFile(pkt.Handle)
+			if err == errNoSuchHandle {
+				err = rs.closeDir(pkt.Handle)
+			}
+			rpkt = statusFromError(pkt, err)
+
+		case *fxpReadPkt:
+			if f, err := rs.getFile(pkt.Handle); err != nil {
+				rpkt = statusFromError(pkt, err)
+			} else {
+				dataPkt := &fxpDataPkt{
+					pkt.ID,
+					make([]byte, int(pkt.Len)),
+				}
+				if _, err = f.ReadAt(dataPkt.Data, int64(pkt.Offset)); err != nil {
+					rpkt = statusFromError(pkt, err)
+				} else {
+					rpkt = dataPkt
+				}
+			}
+
+		case *fxpWritePkt:
+			if f, err := rs.getFile(pkt.Handle); err != nil {
+				rpkt = statusFromError(pkt, err)
+			} else {
+				_, err = f.WriteAt(pkt.Data, int64(pkt.Offset))
+				rpkt = statusFromError(pkt, err)
+			}
+
+		case *fxpStatPkt:
+			if info, err := rs.Stat(pkt.Path); err != nil {
+				rpkt = statusFromError(pkt, err)
+			} else {
+				rpkt = &fxpAttrPkt{
+					pkt.ID,
+					fileAttrFromInfo(info),
+				}
+			}
+
+		case *fxpLstatPkt:
+			if info, err := rs.Lstat(pkt.Path); err != nil {
+				rpkt = statusFromError(pkt, err)
+			} else {
+				rpkt = &fxpAttrPkt{
+					pkt.ID,
+					fileAttrFromInfo(info),
+				}
+			}
+
 		case *fxpFstatPkt:
-			handle := pkt.getHandle()
-			request, ok := rs.getRequest(handle)
-			if !ok {
-				rpkt = statusFromError(pkt, syscall.EBADF)
+			if f, err := rs.getFile(pkt.Handle); err != nil {
+				rpkt = statusFromError(pkt, err)
 			} else {
-				request = NewRequest("Stat", request.Filepath)
-				rpkt = request.call(rs.Handlers, pkt)
+				rpkt = &fxpAttrPkt{
+					pkt.ID,
+					fileAttrFromInfo(f),
+				}
 			}
-		case hasHandle:
-			handle := pkt.getHandle()
-			request, ok := rs.getRequest(handle)
-			if !ok {
-				rpkt = statusFromError(pkt, syscall.EBADF)
+
+		case *fxpSetstatPkt:
+			rpkt = statusFromError(pkt, rs.Setstat(pkt.Path, pkt.Attr))
+
+		case *fxpFsetstatPkt:
+			if f, err := rs.getFile(pkt.Handle); err != nil {
+				rpkt = statusFromError(pkt, err)
 			} else {
-				rpkt = request.call(rs.Handlers, pkt)
+				rpkt = statusFromError(pkt, f.Setstat(pkt.Attr))
 			}
-		case hasPath:
-			request := requestFromPacket(ctx, pkt)
-			rpkt = request.call(rs.Handlers, pkt)
-			request.close()
+
+		case *fxpOpendirPkt:
+			if d, err := rs.OpenDir(pkt.Path); err != nil {
+				rpkt = statusFromError(pkt, err)
+			} else {
+				handle := rs.nextHandle()
+				rs.openDirsMtx.Lock()
+				rs.openDirs[handle] = d
+				rs.openDirsMtx.Unlock()
+				rpkt = &fxpHandlePkt{pkt.ID, handle}
+			}
+
+		case *fxpReaddirPkt:
+			if d, err := rs.getDir(pkt.Handle); err != nil {
+				rpkt = statusFromError(pkt, err)
+			} else {
+				files := make([]os.FileInfo, MaxReaddirItems)
+				if n, err = d.ReadEntries(items); n > 0 {
+					items := make([]fxpNamePktItem, n)
+					for i, f := range files {
+						name := f.Name()
+						items[i].Name = name
+						items[i].LongName = name
+						items[i].Attr = fileAttrFromInfo(f)
+					}
+					rpkt = &fxpNamePkt{pkt.ID, items}
+				} else {
+					rpkt = statusFromError(pkt, err)
+				}
+			}
+
+		case *fxpRemovePkt:
+			rpkt = statusFromError(pkt, rs.Remove(pkt.Path))
+
+		case *fxpMkdirPkt:
+			rpkt = statusFromError(pkt, rs.Mkdir(pkt.Path, pkt.Attr))
+
+		case *fxpRmdirPkt:
+			rpkt = statusFromError(pkt, rs.Rmdir(pkt.Path))
+
+		case *fxpRealpathPkt:
+			if fpath := path.Clean(pkt.Path); path.IsAbs(fpath) {
+				rpkt = &fxpNamePkt{
+					ID: pkt.ID,
+					Items: []fxpNamePktItem{{
+						Name:     fpath,
+						LongName: fpath,
+						Attr:     &FileAttr{},
+					}},
+				}
+			} else if abs, err := rs.RealPath(fpath); err != nil {
+				rpkt = statusFromError(pkt, err)
+			} else {
+				rpkt = &fxpNamePkt{
+					pkt.ID,
+					[]fxpNamePktItem{{abs, abs, &FileAttr{}}},
+				}
+			}
+
+		case *fxpRenamePkt:
+			rpkt = statusFromError(pkt, rs.Rename(pkt.OldPath, pkt.NewPath))
+
+		case *fxpReadlinkPkt:
+			if fpath, err := rs.ReadLink(pkt.Path); err != nil {
+				rpkt = statusFromError(pkt, err)
+			} else {
+				rpkt = &fxpNamePkt{
+					pkt.ID,
+					[]fxpNamePktItem{{fpath, fpath, &FileAttr{}}},
+				}
+			}
+
+		case *fxpSymlinkPkt:
+			rpkt = statusFromError(pkt, rs.Symlink(pkt.LinkPath, pkt.TargetPath))
+
 		default:
-			return errors.Errorf("unexpected packet type %T", pkt)
+			rpkt = statusFromError(pkt, ErrSshFxOpUnsupported)
 		}
 
 		rs.pktMgr.readyPacket(orderedResponse{rpkt, pkt.orderID()})

@@ -251,7 +251,7 @@ func (svr *Server) Serve() error {
 	var pktType uint8
 	var pktBytes []byte
 	for {
-		pktType, pktBytes, err = svr.recvPacket()
+		pktType, pktBytes, err = readPacket(svr.conn)
 		if err != nil {
 			break
 		}
