@@ -1,16 +1,12 @@
-# Golang SFTP Client/Server
+# Golang SFTP Server
 
-The `sftp` package implements an SFTP client interface for performing filesystem actions on a remote SSH server, as well as a server implementation for which user code can implement custom request handlers or use one of the included implementations like `sftp.MemFS()`.
+[![GoDoc](https://godoc.org/github.com/pkg/sftp?status.svg)](http://godoc.org/github.com/tera-insights/sftp)
 
-[![UNIX Build Status](https://travis-ci.org/pkg/sftp.svg?branch=master)](https://travis-ci.org/pkg/sftp) [![GoDoc](https://godoc.org/github.com/pkg/sftp?status.svg)](http://godoc.org/github.com/pkg/sftp)
+The `sftp` package implements the SFTP server protocol. To serve SFTP, you need only an `io.ReadWriter` for the packet transport (typically this will be an SSH channel), and a `RequestHandler` implementation.
 
-## Usage and Examples
+This package currently provides two `RequestHandler` implementations for your convenience: an in-memory filesystem (`MemFS`) and a wrapper around the OS filesystem (`HostFS`). Both implementations are excellent references for writing your own driver.
 
-See the [GoDoc](http://godoc.org/github.com/pkg/sftp) for full documentation and small examples. Larger examples can be found in the `examples/` folder.
-
-The basic operation of the package mirrors the facilities of the [`os`](http://golang.org/pkg/os) package.
-
-The `Walker` interface for directory traversal is heavily inspired by Keith Rarick's [`fs`](http://godoc.org/github.com/kr/fs) package.
+See the [GoDoc](http://godoc.org/github.com/tera-insights/sftp) for full documentation and small examples. Larger examples can be found in the `examples/` folder.
 
 ## Contributing
 
@@ -26,10 +22,28 @@ Thanks.
 
 ### Navigating the Source Code
 
-1. The SFTP protocol spec used for reference can be found [here](https://tools.ietf.org/html/draft-ietf-secsh-filexfer-02).
+The SFTP protocol spec used for reference can be found [here](https://tools.ietf.org/pdf/draft-ietf-secsh-filexfer-02). Please also review the [OpenSSH extensions and **changes**](https://github.com/openssh/openssh-portable/blob/master/PROTOCOL#L344), as they influenced most of the SFTP ecosystem.
 
-1. All the low-level SFTP protocol code lies in the `proto_*.go` files. This includes values such as `SSH_FXP_INIT` and `SSH_FXF_TRUNC` (`fxpInit` and `PFlagTruncate`, respectively), as well as code for (un)marshalling the dozens of packet types.
+- `packets.go`
 
-1. The main client code is found in `client.go` (as one might expect).
+    All (un)marshaling code for *standard* SFTP packets. Please respect the `fxp<type>Pkt` naming convention. **Do not** propose using the `reflect` or `encoding/binary` packages for marshaling unless you can prove that they are not vastly slower than manually-written marshaling code.
 
-1. The `Server` implementation and `RequestHandler` interface can both be found in `server.go`. All included `RequestHandler` implementations get their own distinct files which must all follow the pattern `handler_*.go`, e.g. `handler_memory_fs.go`.
+    > **Note:** Packets do not technically adhere to the `encoding.BinaryMarshaler/Unmarshaler` interfaces. This is done for significant performance gains, and packet types are not exposed by the package so it should be a non-issue. Namely, `fxpWritePkt` retains a subslice of the data passed to `Unmarshal`, and packets cannot directly unmarshal themselves from their marshaled forms. Both of these gotchas should be pretty easy to keep in check and allow for minimal copying and memory usage.
+
+- `packets_extended.go`
+
+    All (un)marshaling code for *extended* packets. Please respect the `fxpExt<type>Pkt` naming convention and read the `packets.go` note above.
+
+- `sftp.go`
+
+    Contains all the SFTP protocol constants, like packet types and file open flags. Please respect the `fxp<type>` naming convention, e.g. `SSH_FXP_INIT` becomes `fxpInit` and `SSH_FXP_READDIR` becomes `fxpReaddir`.
+
+- `server.go`
+
+    Contains the `Serve(io.ReadWriter, RequestHandler)` implementation and also the `RequestHandler` interface.
+
+- `handler_*.go`
+
+    Each `RequestHandler` implementation gets its own file, prefixed with `handler_`.
+
+- **TODO(samterainsights):** rest of the files cleanup/documentation...
