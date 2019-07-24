@@ -6,17 +6,17 @@ import (
 	"os"
 )
 
-type hostFS struct {
-	readonly bool
-}
-
-// HostFS wraps the OS filesystem with an SFTP request handler.
-func HostFS(readonly bool) RequestHandler {
-	return hostFS{readonly}
+// HostFS implements RequestHandler using the host OS's filesystem.
+type HostFS struct {
+	AllowWrite bool // Permit requests which modify the filesystem?
+	// TODO(samterainsights): Add HomeDirectory for resolving relative paths
 }
 
 // OpenFile should behave identically to os.OpenFile.
-func (fs hostFS) OpenFile(name string, flag int, perm os.FileMode) (FileHandle, error) {
+func (fs HostFS) OpenFile(name string, flag int, perm os.FileMode) (FileHandle, error) {
+	if !fs.AllowWrite && flag&(os.O_CREATE|os.O_RDWR|os.O_WRONLY) != 0 {
+		return nil, ErrSshFxPermissionDenied
+	}
 	f, err := os.OpenFile(name, flag, perm)
 	if err != nil {
 		return nil, err
@@ -35,7 +35,10 @@ func (fs hostFS) OpenFile(name string, flag int, perm os.FileMode) (FileHandle, 
 
 // Mkdir creates a new directory. An error should be returned if the specified
 // path already exists.
-func (fs hostFS) Mkdir(name string, attr *FileAttr) error {
+func (fs HostFS) Mkdir(name string, attr *FileAttr) error {
+	if !fs.AllowWrite {
+		return ErrSshFxPermissionDenied
+	}
 	return os.Mkdir(name, attr.Perms)
 }
 
@@ -43,7 +46,7 @@ func (fs hostFS) Mkdir(name string, attr *FileAttr) error {
 // given path is not a directory. If the returned DirReader can be cast to an
 // io.Closer, its Close method will be called once the SFTP client is done
 // scanning.
-func (fs hostFS) OpenDir(name string) (DirReader, error) {
+func (fs HostFS) OpenDir(name string) (DirReader, error) {
 	f, err := os.Open(name)
 	if err != nil {
 		return nil, err
@@ -62,23 +65,29 @@ func (fs hostFS) OpenDir(name string) (DirReader, error) {
 
 // Rename renames the given path. An error should be returned if the path does
 // not exist or the new path already exists.
-func (fs hostFS) Rename(oldpath, newpath string) error {
+func (fs HostFS) Rename(oldpath, newpath string) error {
+	if !fs.AllowWrite {
+		return ErrSshFxPermissionDenied
+	}
 	return os.Rename(oldpath, newpath)
 }
 
 // Stat retrieves info about the given path, following symlinks.
-func (fs hostFS) Stat(name string) (os.FileInfo, error) {
+func (fs HostFS) Stat(name string) (os.FileInfo, error) {
 	return os.Stat(name)
 }
 
 // Lstat retrieves info about the given path, and does not follow symlinks,
 // i.e. it can return information about symlinks themselves.
-func (fs hostFS) Lstat(name string) (os.FileInfo, error) {
+func (fs HostFS) Lstat(name string) (os.FileInfo, error) {
 	return os.Lstat(name)
 }
 
 // Setstat set attributes for the given path.
-func (fs hostFS) Setstat(name string, attr *FileAttr) (err error) {
+func (fs HostFS) Setstat(name string, attr *FileAttr) (err error) {
+	if !fs.AllowWrite {
+		return ErrSshFxPermissionDenied
+	}
 	if attr.Flags&attrFlagSize != 0 {
 		if err = os.Truncate(name, int64(attr.Size)); err != nil {
 			return
@@ -101,18 +110,24 @@ func (fs hostFS) Setstat(name string, attr *FileAttr) (err error) {
 }
 
 // Symlink creates a symlink with the given target.
-func (fs hostFS) Symlink(name, target string) error {
+func (fs HostFS) Symlink(name, target string) error {
+	if !fs.AllowWrite {
+		return ErrSshFxPermissionDenied
+	}
 	return os.Symlink(target, name)
 }
 
 // ReadLink returns the target path of the given symbolic link.
-func (fs hostFS) ReadLink(name string) (string, error) {
+func (fs HostFS) ReadLink(name string) (string, error) {
 	return os.Readlink(name)
 }
 
 // Rmdir removes the specified directory. An error should be returned if the
 // given path does not exists, is not a directory, or has children.
-func (fs hostFS) Rmdir(name string) error {
+func (fs HostFS) Rmdir(name string) error {
+	if !fs.AllowWrite {
+		return ErrSshFxPermissionDenied
+	}
 	info, err := os.Lstat(name)
 	if err != nil {
 		return err
@@ -125,7 +140,10 @@ func (fs hostFS) Rmdir(name string) error {
 
 // Remove removes the specified file. An error should be returned if the path
 // does not exist or it is a directory.
-func (fs hostFS) Remove(name string) error {
+func (fs HostFS) Remove(name string) error {
+	if !fs.AllowWrite {
+		return ErrSshFxPermissionDenied
+	}
 	info, err := os.Lstat(name)
 	if err != nil {
 		return err
@@ -137,7 +155,7 @@ func (fs hostFS) Remove(name string) error {
 }
 
 // RealPath is responsible for producing an absolute path from a relative one.
-func (fs hostFS) RealPath(name string) (string, error) {
+func (fs HostFS) RealPath(name string) (string, error) {
 	return "", ErrSshFxOpUnsupported // TODO(samterainsights)
 }
 
