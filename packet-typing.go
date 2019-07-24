@@ -6,15 +6,19 @@ import (
 	"github.com/pkg/errors"
 )
 
+type ider interface {
+	id() uint32
+}
+
 // all incoming packets
 type requestPacket interface {
 	encoding.BinaryUnmarshaler
-	id() uint32
+	ider
 }
 
 type responsePacket interface {
 	encoding.BinaryMarshaler
-	id() uint32
+	ider
 }
 
 // interfaces to group types

@@ -6,6 +6,8 @@ import (
 	"sync"
 )
 
+const sftpServerWorkerCount = 8
+
 // packetManager ensures outgoing packets are in the same order as the incoming
 // per section 7 of the RFC.
 type packetManager struct {

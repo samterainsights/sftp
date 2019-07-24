@@ -16,8 +16,8 @@ import (
 const ProtocolVersion = 3
 
 const (
-	ssh_FXP_INIT           = 1
-	ssh_FXP_VERSION        = 2
+	fxpInit                = 1
+	fxpVersion             = 2
 	ssh_FXP_OPEN           = 3
 	ssh_FXP_CLOSE          = 4
 	ssh_FXP_READ           = 5
@@ -139,9 +139,9 @@ type fxp uint8
 
 func (f fxp) String() string {
 	switch f {
-	case ssh_FXP_INIT:
+	case fxpInit:
 		return "SSH_FXP_INIT"
-	case ssh_FXP_VERSION:
+	case fxpVersion:
 		return "SSH_FXP_VERSION"
 	case ssh_FXP_OPEN:
 		return "SSH_FXP_OPEN"

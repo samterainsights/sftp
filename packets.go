@@ -17,6 +17,12 @@ type extensionPair struct {
 	Data string
 }
 
+// TODO(samterainsights): eliminate the need for this fake method. Currently needed
+// to satisfy the ider/responsePacket interfaces because all packets are treated in
+// the same way even though the init/version packets are only sent in a handshake at
+// the beginning.
+func (p *fxpInitPkt) id() uint32 { return 0 }
+
 func (p *fxpInitPkt) MarshalBinary() ([]byte, error) {
 	dataLen := 4 // uint32 version
 	for _, ext := range p.Extensions {
@@ -65,7 +71,7 @@ func (p *fxpVersionPkt) MarshalBinary() ([]byte, error) {
 	for _, ext := range p.Extensions {
 		dataLen += (4 + len(ext.Name)) + (4 + len(ext.Data)) // string + string
 	}
-	b := allocPkt(ssh_FXP_VERSION, dataLen)
+	b := allocPkt(fxpVersion, dataLen)
 	b = appendU32(b, p.Version)
 	for _, ext := range p.Extensions {
 		b = appendStr(b, ext.Name)

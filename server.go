@@ -12,12 +12,15 @@ import (
 	"github.com/pkg/errors"
 )
 
-var maxTxPacket uint32 = 1 << 15
-var errNoSuchHandle = errors.New("invalid handle")
+// maxReadWriteSize is the maximum number of bytes which may be transferred in
+// a single SSH_FXP_READ or SSH_FXP_WRITE packet.
+const maxReadWriteSize = 1 << 15
 
 // MaxReaddirItems is the maximum number of files to return for a single
 // SSH_FXP_READDIR request.
 const MaxReaddirItems = 100
+
+var errNoSuchHandle = errors.New("invalid handle")
 
 // A FileHandle is an TODO(samterainsights)
 type FileHandle interface {
@@ -127,7 +130,7 @@ func Serve(transport io.ReadWriter, handler RequestHandler) (err error) {
 		openFiles:      make(map[string]FileHandle),
 		openDirs:       make(map[string]DirReader),
 	}
-	defer rs.cleanup()
+	defer rs.closeAllHandles()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -174,52 +177,6 @@ func Serve(transport io.ReadWriter, handler RequestHandler) (err error) {
 	}
 }
 
-func (rs *server) nextHandle() string {
-	handle := atomic.AddUint32(&rs.handleCtr, 1)
-	return strconv.FormatUint(uint32(handle), 36)
-}
-
-func (rs *server) getFile(handle string) (FileHandle, error) {
-	rs.openFilesMtx.RLock()
-	defer rs.openFilesMtx.RUnlock()
-	if f, exists := rs.openFiles[handle]; exists {
-		return f, nil
-	}
-	return nil, errNoSuchHandle
-}
-
-func (rs *server) closeFile(handle string) error {
-	rs.openFilesMtx.Lock()
-	defer rs.openFilesMtx.Unlock()
-	if f, exists := rs.openFiles[handle]; exists {
-		delete(rs.openFiles, handle)
-		return f.Close()
-	}
-	return errNoSuchHandle
-}
-
-func (rs *server) getDir(handle string) (DirReader, error) {
-	rs.openDirsMtx.RLock()
-	defer rs.openDirsMtx.RUnlock()
-	if d, exists := rs.openDirs[handle]; exists {
-		return d, nil
-	}
-	return nil, errNoSuchHandle
-}
-
-func (rs *server) closeDir(handle string) error {
-	rs.openDirsMtx.Lock()
-	defer rs.openDirsMtx.Unlock()
-	if d, exists := rs.openDirs[handle]; exists {
-		delete(rs.openDirs, handle)
-		if closer, ok := d.(io.Closer); ok {
-			return closer.Close()
-		}
-		return nil
-	}
-	return errNoSuchHandle
-}
-
 func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest) error {
 	for pkt := range pktChan {
 		var rpkt responsePacket
@@ -235,7 +192,7 @@ func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest)
 				rs.openFilesMtx.Lock()
 				rs.openFiles[handle] = f
 				rs.openFilesMtx.Unlock()
-				rpkt = fxpHandlePkt{pkt.ID, handle}
+				rpkt = &fxpHandlePkt{pkt.ID, handle}
 			}
 
 		case *fxpClosePkt:
@@ -249,14 +206,13 @@ func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest)
 			if f, err := rs.getFile(pkt.Handle); err != nil {
 				rpkt = statusFromError(pkt, err)
 			} else {
-				dataPkt := &fxpDataPkt{
-					pkt.ID,
-					make([]byte, int(pkt.Len)),
-				}
-				if _, err = f.ReadAt(dataPkt.Data, int64(pkt.Offset)); err != nil {
+				data := make([]byte, clamp(pkt.Len, maxReadWriteSize))
+				n, err := f.ReadAt(data, int64(pkt.Offset))
+
+				if err != nil && (err != io.EOF || n == 0) {
 					rpkt = statusFromError(pkt, err)
 				} else {
-					rpkt = dataPkt
+					rpkt = &fxpDataPkt{pkt.ID, data[:n]}
 				}
 			}
 
@@ -324,7 +280,7 @@ func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest)
 				rpkt = statusFromError(pkt, err)
 			} else {
 				files := make([]os.FileInfo, MaxReaddirItems)
-				if n, err = d.ReadEntries(items); n > 0 {
+				if n, err := d.ReadEntries(files); n > 0 {
 					items := make([]fxpNamePktItem, n)
 					for i, f := range files {
 						name := f.Name()
@@ -391,11 +347,74 @@ func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest)
 	return nil
 }
 
-func (rs *server) cleanup() {
-	// make sure all open requests are properly closed
-	// (eg. possible on dropped connections, client crashes, etc.)
-	for handle, req := range rs.openRequests {
-		delete(rs.openRequests, handle)
-		req.close()
+func clamp(v, max uint32) uint32 {
+	if v > max {
+		return max
 	}
+	return v
+}
+
+func (rs *server) nextHandle() string {
+	handle := atomic.AddUint32(&rs.handleCtr, 1)
+	return strconv.FormatUint(uint64(handle), 36)
+}
+
+func (rs *server) getFile(handle string) (FileHandle, error) {
+	rs.openFilesMtx.RLock()
+	defer rs.openFilesMtx.RUnlock()
+	if f, exists := rs.openFiles[handle]; exists {
+		return f, nil
+	}
+	return nil, errNoSuchHandle
+}
+
+func (rs *server) closeFile(handle string) error {
+	rs.openFilesMtx.Lock()
+	defer rs.openFilesMtx.Unlock()
+	if f, exists := rs.openFiles[handle]; exists {
+		delete(rs.openFiles, handle)
+		return f.Close()
+	}
+	return errNoSuchHandle
+}
+
+func (rs *server) getDir(handle string) (DirReader, error) {
+	rs.openDirsMtx.RLock()
+	defer rs.openDirsMtx.RUnlock()
+	if d, exists := rs.openDirs[handle]; exists {
+		return d, nil
+	}
+	return nil, errNoSuchHandle
+}
+
+func (rs *server) closeDir(handle string) error {
+	rs.openDirsMtx.Lock()
+	defer rs.openDirsMtx.Unlock()
+	if d, exists := rs.openDirs[handle]; exists {
+		delete(rs.openDirs, handle)
+		if closer, ok := d.(io.Closer); ok {
+			return closer.Close()
+		}
+		return nil
+	}
+	return errNoSuchHandle
+}
+
+// closeAllHandles closes all open file/directory handles.
+func (rs *server) closeAllHandles() {
+	rs.openFilesMtx.Lock()
+	for handle, file := range rs.openFiles {
+		file.Close() // TODO(samterainsights): propagate error somehow
+		delete(rs.openFiles, handle)
+	}
+	rs.openFilesMtx.Unlock()
+
+	rs.openDirsMtx.Lock()
+	for handle, dir := range rs.openDirs {
+		if closer, ok := dir.(io.Closer); ok {
+			closer.Close() // TODO(samterainsights): propagate error somehow
+		}
+		delete(rs.openDirs, handle)
+	}
+	rs.openDirsMtx.Unlock()
 }
