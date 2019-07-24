@@ -123,7 +123,7 @@ func getStatusMsg(p interface{}) string {
 }
 func checkOkStatus(t *testing.T, p interface{}) {
 	pkt := p.(fxpStatusPkt)
-	assert.Equal(t, pkt.StatusError.Code, uint32(ssh_FX_OK),
+	assert.Equal(t, pkt.StatusError.Code, uint32(fxOK),
 		"fxpStatusPkt not OK\n", pkt.StatusError.msg)
 }
 

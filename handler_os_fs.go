@@ -15,7 +15,7 @@ type HostFS struct {
 // OpenFile should behave identically to os.OpenFile.
 func (fs HostFS) OpenFile(name string, flag int, perm os.FileMode) (FileHandle, error) {
 	if !fs.AllowWrite && flag&(os.O_CREATE|os.O_RDWR|os.O_WRONLY) != 0 {
-		return nil, ErrSshFxPermissionDenied
+		return nil, ErrPermDenied
 	}
 	f, err := os.OpenFile(name, flag, perm)
 	if err != nil {
@@ -28,7 +28,7 @@ func (fs HostFS) OpenFile(name string, flag int, perm os.FileMode) (FileHandle, 
 	}
 	if fi.IsDir() {
 		f.Close()
-		return nil, ErrSshFxBadMessage
+		return nil, ErrBadMessage
 	}
 	return hostFile{fi, f}, nil
 }
@@ -37,7 +37,7 @@ func (fs HostFS) OpenFile(name string, flag int, perm os.FileMode) (FileHandle, 
 // path already exists.
 func (fs HostFS) Mkdir(name string, attr *FileAttr) error {
 	if !fs.AllowWrite {
-		return ErrSshFxPermissionDenied
+		return ErrPermDenied
 	}
 	return os.Mkdir(name, attr.Perms)
 }
@@ -58,7 +58,7 @@ func (fs HostFS) OpenDir(name string) (DirReader, error) {
 	}
 	if !fi.IsDir() {
 		f.Close()
-		return nil, ErrSshFxBadMessage
+		return nil, ErrBadMessage
 	}
 	return hostDir{f}, nil
 }
@@ -67,7 +67,7 @@ func (fs HostFS) OpenDir(name string) (DirReader, error) {
 // not exist or the new path already exists.
 func (fs HostFS) Rename(oldpath, newpath string) error {
 	if !fs.AllowWrite {
-		return ErrSshFxPermissionDenied
+		return ErrPermDenied
 	}
 	return os.Rename(oldpath, newpath)
 }
@@ -86,7 +86,7 @@ func (fs HostFS) Lstat(name string) (os.FileInfo, error) {
 // Setstat set attributes for the given path.
 func (fs HostFS) Setstat(name string, attr *FileAttr) (err error) {
 	if !fs.AllowWrite {
-		return ErrSshFxPermissionDenied
+		return ErrPermDenied
 	}
 	if attr.Flags&attrFlagSize != 0 {
 		if err = os.Truncate(name, int64(attr.Size)); err != nil {
@@ -112,7 +112,7 @@ func (fs HostFS) Setstat(name string, attr *FileAttr) (err error) {
 // Symlink creates a symlink with the given target.
 func (fs HostFS) Symlink(name, target string) error {
 	if !fs.AllowWrite {
-		return ErrSshFxPermissionDenied
+		return ErrPermDenied
 	}
 	return os.Symlink(target, name)
 }
@@ -126,14 +126,14 @@ func (fs HostFS) ReadLink(name string) (string, error) {
 // given path does not exists, is not a directory, or has children.
 func (fs HostFS) Rmdir(name string) error {
 	if !fs.AllowWrite {
-		return ErrSshFxPermissionDenied
+		return ErrPermDenied
 	}
 	info, err := os.Lstat(name)
 	if err != nil {
 		return err
 	}
 	if !info.IsDir() {
-		return ErrSshFxBadMessage
+		return ErrBadMessage
 	}
 	return os.Remove(name)
 }
@@ -142,21 +142,21 @@ func (fs HostFS) Rmdir(name string) error {
 // does not exist or it is a directory.
 func (fs HostFS) Remove(name string) error {
 	if !fs.AllowWrite {
-		return ErrSshFxPermissionDenied
+		return ErrPermDenied
 	}
 	info, err := os.Lstat(name)
 	if err != nil {
 		return err
 	}
 	if info.IsDir() {
-		return ErrSshFxBadMessage
+		return ErrBadMessage
 	}
 	return os.Remove(name)
 }
 
 // RealPath is responsible for producing an absolute path from a relative one.
 func (fs HostFS) RealPath(name string) (string, error) {
-	return "", ErrSshFxOpUnsupported // TODO(samterainsights)
+	return "", ErrOpUnsupported // TODO(samterainsights)
 }
 
 type hostFile struct {

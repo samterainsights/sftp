@@ -26,7 +26,7 @@ func (p *fxpExtPosixRenamePkt) id() uint32 { return p.ID }
 
 func (p *fxpExtPosixRenamePkt) MarshalBinary() ([]byte, error) {
 	const ext = "posix-rename@openssh.com"
-	b := allocPkt(ssh_FXP_EXTENDED, 4+(4+len(ext))+(4+len(p.OldPath))+(4+len(p.NewPath)))
+	b := allocPkt(fxpExtended, 4+(4+len(ext))+(4+len(p.OldPath))+(4+len(p.NewPath)))
 	b = appendU32(b, p.ID)
 	b = appendStr(b, ext)
 	b = appendStr(b, p.OldPath)
@@ -53,7 +53,7 @@ func (p *fxpExtStatvfsPkt) id() uint32 { return p.ID }
 
 func (p *fxpExtStatvfsPkt) MarshalBinary() ([]byte, error) {
 	const ext = "statvfs@openssh.com"
-	b := allocPkt(ssh_FXP_EXTENDED, 4+(4+len(ext))+(4+len(p.Path)))
+	b := allocPkt(fxpExtended, 4+(4+len(ext))+(4+len(p.Path)))
 	b = appendU32(b, p.ID)
 	b = appendStr(b, ext)
 	return appendStr(b, p.Path), nil
@@ -73,7 +73,7 @@ type fxpExtVfsPkt struct {
 func (p *fxpExtVfsPkt) id() uint32 { return p.ID }
 
 func (p *fxpExtVfsPkt) MarshalBinary() ([]byte, error) {
-	b := allocPkt(ssh_FXP_EXTENDED_REPLY, 4+(11*8)) // uint32 ID + 11 uint64s
+	b := allocPkt(fxpExtendedReply, 4+(11*8)) // uint32 ID + 11 uint64s
 	b = appendU32(b, p.ID)
 	b = appendU64(b, p.BlockSize)
 	b = appendU64(b, p.FBlockSize)

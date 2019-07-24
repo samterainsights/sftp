@@ -13,34 +13,55 @@ import (
 type fxerr uint32
 
 const (
-	ErrSshFxOk               = fxerr(ssh_FX_OK)
-	ErrSshFxEof              = fxerr(ssh_FX_EOF)
-	ErrSshFxNoSuchFile       = fxerr(ssh_FX_NO_SUCH_FILE)
-	ErrSshFxPermissionDenied = fxerr(ssh_FX_PERMISSION_DENIED)
-	ErrSshFxFailure          = fxerr(ssh_FX_FAILURE)
-	ErrSshFxBadMessage       = fxerr(ssh_FX_BAD_MESSAGE)
-	ErrSshFxNoConnection     = fxerr(ssh_FX_NO_CONNECTION)
-	ErrSshFxConnectionLost   = fxerr(ssh_FX_CONNECTION_LOST)
-	ErrSshFxOpUnsupported    = fxerr(ssh_FX_OP_UNSUPPORTED)
+	// ErrEOF indicates end-of-file; directly translates to SSH_FX_EOF.
+	ErrEOF = fxerr(fxEOF)
+
+	// ErrNoSuchFile means a reference was made to a path which does not exist;
+	// directly translates to SSH_FX_NO_SUCH_FILE.
+	ErrNoSuchFile = fxerr(fxNoSuchFile)
+
+	// ErrPermDenied means the client does not have sufficient permissions to
+	// perform the operation; directly translates to SSH_FX_PERMISSION_DENIED.
+	ErrPermDenied = fxerr(fxPermissionDenied)
+
+	// ErrGeneric indicates that some error occurred; directly translates to
+	// SSH_FX_FAILURE. Use more specific errors when possible.
+	ErrGeneric = fxerr(fxFailure)
+
+	// ErrBadMessage means an incorrectly formatted packet or protocol
+	// incompatibility was detected; directly translates to SSH_FX_BAD_MESSAGE.
+	ErrBadMessage = fxerr(fxBadMessage)
+
+	// ErrNoConnection is a client-generated pseudo-error indicating that it
+	// has no connection to the server; directly translates to
+	// SSH_FX_NO_CONNECTION.
+	ErrNoConnection = fxerr(fxNoConnection)
+
+	// ErrConnectionLost is a client-generated pseudo-error indicating that
+	// connection to the server has been lost; directly translates to
+	// SSH_FX_CONNECTION_LOST.
+	ErrConnectionLost = fxerr(fxConnectionLost)
+
+	// ErrOpUnsupported indicates that an operation is not implemented by the
+	// server; directly translates to SSH_FX_OP_UNSUPPORTED.
+	ErrOpUnsupported = fxerr(fxOpUnsupported)
 )
 
 func (e fxerr) Error() string {
 	switch e {
-	case ErrSshFxOk:
-		return "OK"
-	case ErrSshFxEof:
+	case ErrEOF:
 		return "EOF"
-	case ErrSshFxNoSuchFile:
+	case ErrNoSuchFile:
 		return "No Such File"
-	case ErrSshFxPermissionDenied:
+	case ErrPermDenied:
 		return "Permission Denied"
-	case ErrSshFxBadMessage:
+	case ErrBadMessage:
 		return "Bad Message"
-	case ErrSshFxNoConnection:
+	case ErrNoConnection:
 		return "No Connection"
-	case ErrSshFxConnectionLost:
+	case ErrConnectionLost:
 		return "Connection Lost"
-	case ErrSshFxOpUnsupported:
+	case ErrOpUnsupported:
 		return "Operation Unsupported"
 	default:
 		return "Failure"
@@ -51,30 +72,30 @@ func (e fxerr) Error() string {
 func translateErrno(errno syscall.Errno) uint32 {
 	switch errno {
 	case 0:
-		return ssh_FX_OK
+		return fxOK
 	case syscall.ENOENT:
-		return ssh_FX_NO_SUCH_FILE
+		return fxNoSuchFile
 	case syscall.EPERM:
-		return ssh_FX_PERMISSION_DENIED
+		return fxPermissionDenied
 	}
 
-	return ssh_FX_FAILURE
+	return fxFailure
 }
 
 func statusFromError(p ider, err error) *fxpStatusPkt {
 	ret := &fxpStatusPkt{
 		ID: p.id(),
 		StatusError: StatusError{
-			// ssh_FX_OK                = 0
-			// ssh_FX_EOF               = 1
-			// ssh_FX_NO_SUCH_FILE      = 2 ENOENT
-			// ssh_FX_PERMISSION_DENIED = 3
-			// ssh_FX_FAILURE           = 4
-			// ssh_FX_BAD_MESSAGE       = 5
-			// ssh_FX_NO_CONNECTION     = 6
-			// ssh_FX_CONNECTION_LOST   = 7
-			// ssh_FX_OP_UNSUPPORTED    = 8
-			Code: ssh_FX_OK,
+			// fxOK                = 0
+			// fxEOF               = 1
+			// fxNoSuchFile      = 2 ENOENT
+			// fxPermissionDenied = 3
+			// fxFailure           = 4
+			// fxBadMessage       = 5
+			// fxNoConnection     = 6
+			// fxConnectionLost   = 7
+			// fxOpUnsupported    = 8
+			Code: fxOK,
 		},
 	}
 	if err == nil {
@@ -82,7 +103,7 @@ func statusFromError(p ider, err error) *fxpStatusPkt {
 	}
 
 	debug("statusFromError: error is %T %#v", err, err)
-	ret.StatusError.Code = ssh_FX_FAILURE
+	ret.StatusError.Code = fxFailure
 	ret.StatusError.msg = err.Error()
 
 	switch e := err.(type) {
@@ -98,9 +119,9 @@ func statusFromError(p ider, err error) *fxpStatusPkt {
 	default:
 		switch e {
 		case io.EOF:
-			ret.StatusError.Code = ssh_FX_EOF
+			ret.StatusError.Code = fxEOF
 		case os.ErrNotExist:
-			ret.StatusError.Code = ssh_FX_NO_SUCH_FILE
+			ret.StatusError.Code = fxNoSuchFile
 		}
 	}
 

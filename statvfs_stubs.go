@@ -3,5 +3,5 @@
 package sftp
 
 func statVFS(path string) (*StatVFS, error) {
-	return nil, ErrSshFxOpUnsupported
+	return nil, ErrOpUnsupported
 }

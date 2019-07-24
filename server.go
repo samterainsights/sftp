@@ -161,7 +161,7 @@ func Serve(transport io.ReadWriter, handler RequestHandler) (err error) {
 		if pkt, err = makePacket(fxp(pktType), pktBytes); err != nil {
 			switch errors.Cause(err) {
 			case errUnknownExtendedPacket:
-				if err := rs.sendError(pkt, ErrSshFxOpUnsupported); err != nil {
+				if err := rs.sendError(pkt, ErrOpUnsupported); err != nil {
 					debug("failed to send err packet: %v", err)
 					rs.conn.Close() // shuts down recvPacket
 					break
@@ -339,7 +339,7 @@ func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest)
 			rpkt = statusFromError(pkt, rs.Symlink(pkt.LinkPath, pkt.TargetPath))
 
 		default:
-			rpkt = statusFromError(pkt, ErrSshFxOpUnsupported)
+			rpkt = statusFromError(pkt, ErrOpUnsupported)
 		}
 
 		rs.pktMgr.readyPacket(orderedResponse{rpkt, pkt.orderID()})
