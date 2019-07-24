@@ -22,9 +22,7 @@ type fxpExtPosixRenamePkt struct {
 	NewPath string
 }
 
-func (p *fxpExtPosixRenamePkt) id() uint32      { return p.ID }
-func (p *fxpExtPosixRenamePkt) getPath() string { return p.OldPath }
-func (p *fxpExtPosixRenamePkt) notReadOnly()    {}
+func (p *fxpExtPosixRenamePkt) id() uint32 { return p.ID }
 
 func (p *fxpExtPosixRenamePkt) MarshalBinary() ([]byte, error) {
 	const ext = "posix-rename@openssh.com"
@@ -51,8 +49,7 @@ type fxpExtStatvfsPkt struct {
 	Path string
 }
 
-func (p *fxpExtStatvfsPkt) id() uint32     { return p.ID }
-func (p *fxpExtStatvfsPkt) readonly() bool { return true }
+func (p *fxpExtStatvfsPkt) id() uint32 { return p.ID }
 
 func (p *fxpExtStatvfsPkt) MarshalBinary() ([]byte, error) {
 	const ext = "statvfs@openssh.com"

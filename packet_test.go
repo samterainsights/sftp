@@ -213,37 +213,6 @@ func TestRecvPacket(t *testing.T) {
 	}
 }
 
-func TestSSHFxpOpenPacketreadonly(t *testing.T) {
-	var tests = []struct {
-		pflags uint32
-		ok     bool
-	}{
-		{
-			pflags: PFlagRead,
-			ok:     true,
-		},
-		{
-			pflags: PFlagWrite,
-			ok:     false,
-		},
-		{
-			pflags: PFlagRead | PFlagWrite,
-			ok:     false,
-		},
-	}
-
-	for _, tt := range tests {
-		p := &fxpOpenPkt{
-			Pflags: tt.pflags,
-		}
-
-		if want, got := tt.ok, p.readonly(); want != got {
-			t.Errorf("unexpected value for p.readonly(): want: %v, got: %v",
-				want, got)
-		}
-	}
-}
-
 func TestSSHFxpOpenPackethasPflags(t *testing.T) {
 	var tests = []struct {
 		desc      string

@@ -21,55 +21,6 @@ type responsePacket interface {
 	ider
 }
 
-// interfaces to group types
-type hasPath interface {
-	requestPacket
-	getPath() string
-}
-
-type hasHandle interface {
-	requestPacket
-	getHandle() string
-}
-
-type notReadOnly interface {
-	notReadOnly()
-}
-
-//// define types by adding methods
-// hasPath
-func (p fxpLstatPkt) getPath() string      { return p.Path }
-func (p fxpStatPkt) getPath() string       { return p.Path }
-func (p fxpRmdirPkt) getPath() string      { return p.Path }
-func (p fxpReadlinkPkt) getPath() string   { return p.Path }
-func (p fxpRealpathPkt) getPath() string   { return p.Path }
-func (p fxpMkdirPkt) getPath() string      { return p.Path }
-func (p fxpSetstatPkt) getPath() string    { return p.Path }
-func (p fxpExtStatvfsPkt) getPath() string { return p.Path }
-func (p fxpRemovePkt) getPath() string     { return p.Path }
-func (p fxpRenamePkt) getPath() string     { return p.OldPath }
-func (p fxpSymlinkPkt) getPath() string    { return p.TargetPath }
-func (p fxpOpendirPkt) getPath() string    { return p.Path }
-func (p fxpOpenPkt) getPath() string       { return p.Path }
-
-// hasHandle
-func (p fxpFstatPkt) getHandle() string    { return p.Handle }
-func (p fxpFsetstatPkt) getHandle() string { return p.Handle }
-func (p fxpReadPkt) getHandle() string     { return p.Handle }
-func (p fxpWritePkt) getHandle() string    { return p.Handle }
-func (p fxpReaddirPkt) getHandle() string  { return p.Handle }
-func (p fxpClosePkt) getHandle() string    { return p.Handle }
-
-// notReadOnly
-func (p fxpWritePkt) notReadOnly()    {}
-func (p fxpSetstatPkt) notReadOnly()  {}
-func (p fxpFsetstatPkt) notReadOnly() {}
-func (p fxpRemovePkt) notReadOnly()   {}
-func (p fxpMkdirPkt) notReadOnly()    {}
-func (p fxpRmdirPkt) notReadOnly()    {}
-func (p fxpRenamePkt) notReadOnly()   {}
-func (p fxpSymlinkPkt) notReadOnly()  {}
-
 // take raw incoming packet data and build packet objects
 func makePacket(pktType fxp, pktData []byte) (requestPacket, error) {
 	var pkt requestPacket
