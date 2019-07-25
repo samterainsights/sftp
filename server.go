@@ -119,10 +119,7 @@ func (rwc noopCloseRWC) Close() error { return nil }
 // SFTP has no security provisions so it should always be layered on top of a secure
 // connection.
 func Serve(transport io.ReadWriter, handler RequestHandler) (err error) {
-	conn := &conn{
-		Reader:      transport,
-		WriteCloser: noopCloseRWC{transport},
-	}
+	conn := &conn{transport}
 	rs := &server{
 		conn:           conn,
 		RequestHandler: handler,
@@ -142,7 +139,7 @@ func Serve(transport io.ReadWriter, handler RequestHandler) (err error) {
 		go func() {
 			defer wg.Done()
 			if err := rs.packetWorker(ctx, ch); err != nil {
-				rs.conn.Close() // shuts down recvPacket
+				// FIXME(samterainsights): propagate error
 			}
 		}()
 	})
@@ -163,12 +160,12 @@ func Serve(transport io.ReadWriter, handler RequestHandler) (err error) {
 			case errUnknownExtendedPacket:
 				if err := rs.sendError(pkt, ErrOpUnsupported); err != nil {
 					debug("failed to send err packet: %v", err)
-					rs.conn.Close() // shuts down recvPacket
+					// FIXME(samterainsights): propagate error
 					break
 				}
 			default:
 				debug("makePacket err: %v", err)
-				rs.conn.Close() // shuts down recvPacket
+				// FIXME(samterainsights): propagate error
 				break
 			}
 		}

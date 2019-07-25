@@ -1,6 +1,7 @@
 package sftp
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"syscall"
@@ -9,6 +10,45 @@ import (
 // Error types that match the SFTP's SSH_FXP_STATUS codes. Gives you more
 // direct control of the errors being sent vs. letting the library work them
 // out from the standard os/io errors.
+
+// Status codes
+const (
+	fxOK               = 0
+	fxEOF              = 1
+	fxNoSuchFile       = 2
+	fxPermissionDenied = 3
+	fxFailure          = 4
+	fxBadMessage       = 5
+	fxNoConnection     = 6 // client-generated only
+	fxConnectionLost   = 7 // client-generated only
+	fxOpUnsupported    = 8
+
+	// Newer error codes
+	// https://tools.ietf.org/html/draft-ietf-secsh-filexfer-13#section-9.1
+	fxInvalidHandle           = 9
+	fxNoSuchPath              = 10
+	fxFileAlreadyExists       = 11
+	fxWriteProtected          = 12
+	fxNoMedia                 = 13
+	fxNoSpaceOnFilesystem     = 14
+	fxQuotaExceeded           = 15
+	fxUnknownPrincipal        = 16
+	fxLockConflict            = 17
+	fxDirNotEmpty             = 18
+	fxNotADirectory           = 19
+	fxInvalidFilename         = 20
+	fxLinkLoop                = 21
+	fxCannotDelete            = 22
+	fxInvalidParam            = 23
+	fxIsADirectory            = 24
+	fxByteRangeLockConflict   = 25
+	fxByteRangeLockRefused    = 26
+	fxDeletePending           = 27
+	fxFileCorrupt             = 28
+	fxOwnerInvalid            = 29
+	fxGroupInvalid            = 30
+	fxNoMatchingByteRangeLock = 31
+)
 
 type fxerr uint32
 
@@ -45,6 +85,16 @@ const (
 	// ErrOpUnsupported indicates that an operation is not implemented by the
 	// server; directly translates to SSH_FX_OP_UNSUPPORTED.
 	ErrOpUnsupported = fxerr(fxOpUnsupported)
+
+	// ErrNotADirectory indicates that the given path exists but is not a
+	// directory when a directory is required; directly translates to
+	// SSH_FX_NOT_A_DIRECTORY.
+	ErrNotADirectory = fxerr(fxNotADirectory)
+
+	// ErrIsADirectory indicates that the given path exists but is a directory
+	// in a context where a directory cannot be used; directly translates to
+	// SSH_FX_FILE_IS_A_DIRECTORY.
+	ErrIsADirectory = fxerr(fxIsADirectory)
 )
 
 func (e fxerr) Error() string {
@@ -63,12 +113,30 @@ func (e fxerr) Error() string {
 		return "Connection Lost"
 	case ErrOpUnsupported:
 		return "Operation Unsupported"
+	case ErrNotADirectory:
+		return "Not a Directory"
+	case ErrIsADirectory:
+		return "Is a Directory"
 	default:
 		return "Failure"
 	}
 }
 
-// translateErrno translates a syscall error number to a SFTP error code.
+// A StatusError is returned when an SFTP operation fails, and provides
+// additional information about the failure.
+type StatusError struct {
+	Code      uint32
+	msg, lang string
+}
+
+func (s *StatusError) Error() string {
+	if s.msg == "" {
+		return fmt.Sprintf("sftp: %s", fxerr(s.Code))
+	}
+	return fmt.Sprintf("sftp: %s (%s)", fxerr(s.Code), s.msg)
+}
+
+// translateErrno translates a syscall error number to an SFTP error code.
 func translateErrno(errno syscall.Errno) uint32 {
 	switch errno {
 	case 0:
