@@ -6,14 +6,24 @@ import (
 	"os"
 )
 
-// HostFS implements RequestHandler using the host OS's filesystem.
-type HostFS struct {
+// HostFSOpts is used to configure a HostFS RequestHandler.
+//
+// TODO(samterainsights): Add HomeDirectory for resolving relative paths.
+type HostFSOpts struct {
 	AllowWrite bool // Permit requests which modify the filesystem?
-	// TODO(samterainsights): Add HomeDirectory for resolving relative paths
+}
+
+// HostFS creates a RequestHandler wrapping the OS filesystem.
+func HostFS(opts HostFSOpts) RequestHandler {
+	return hostFS{opts}
+}
+
+type hostFS struct {
+	HostFSOpts
 }
 
 // OpenFile should behave identically to os.OpenFile.
-func (fs HostFS) OpenFile(name string, flag int, perm os.FileMode) (FileHandle, error) {
+func (fs hostFS) OpenFile(name string, flag int, perm os.FileMode) (FileHandle, error) {
 	if !fs.AllowWrite && flag&(os.O_CREATE|os.O_RDWR|os.O_WRONLY) != 0 {
 		return nil, ErrPermDenied
 	}
@@ -35,7 +45,7 @@ func (fs HostFS) OpenFile(name string, flag int, perm os.FileMode) (FileHandle, 
 
 // Mkdir creates a new directory. An error should be returned if the specified
 // path already exists.
-func (fs HostFS) Mkdir(name string, attr *FileAttr) error {
+func (fs hostFS) Mkdir(name string, attr *FileAttr) error {
 	if !fs.AllowWrite {
 		return ErrPermDenied
 	}
@@ -46,7 +56,7 @@ func (fs HostFS) Mkdir(name string, attr *FileAttr) error {
 // given path is not a directory. If the returned DirReader can be cast to an
 // io.Closer, its Close method will be called once the SFTP client is done
 // scanning.
-func (fs HostFS) OpenDir(name string) (DirReader, error) {
+func (fs hostFS) OpenDir(name string) (DirReader, error) {
 	f, err := os.Open(name)
 	if err != nil {
 		return nil, err
@@ -65,7 +75,7 @@ func (fs HostFS) OpenDir(name string) (DirReader, error) {
 
 // Rename renames the given path. An error should be returned if the path does
 // not exist or the new path already exists.
-func (fs HostFS) Rename(oldpath, newpath string) error {
+func (fs hostFS) Rename(oldpath, newpath string) error {
 	if !fs.AllowWrite {
 		return ErrPermDenied
 	}
@@ -73,18 +83,18 @@ func (fs HostFS) Rename(oldpath, newpath string) error {
 }
 
 // Stat retrieves info about the given path, following symlinks.
-func (fs HostFS) Stat(name string) (os.FileInfo, error) {
+func (fs hostFS) Stat(name string) (os.FileInfo, error) {
 	return os.Stat(name)
 }
 
 // Lstat retrieves info about the given path, and does not follow symlinks,
 // i.e. it can return information about symlinks themselves.
-func (fs HostFS) Lstat(name string) (os.FileInfo, error) {
+func (fs hostFS) Lstat(name string) (os.FileInfo, error) {
 	return os.Lstat(name)
 }
 
 // Setstat set attributes for the given path.
-func (fs HostFS) Setstat(name string, attr *FileAttr) (err error) {
+func (fs hostFS) Setstat(name string, attr *FileAttr) (err error) {
 	if !fs.AllowWrite {
 		return ErrPermDenied
 	}
@@ -110,7 +120,7 @@ func (fs HostFS) Setstat(name string, attr *FileAttr) (err error) {
 }
 
 // Symlink creates a symlink with the given target.
-func (fs HostFS) Symlink(name, target string) error {
+func (fs hostFS) Symlink(name, target string) error {
 	if !fs.AllowWrite {
 		return ErrPermDenied
 	}
@@ -118,13 +128,13 @@ func (fs HostFS) Symlink(name, target string) error {
 }
 
 // ReadLink returns the target path of the given symbolic link.
-func (fs HostFS) ReadLink(name string) (string, error) {
+func (fs hostFS) ReadLink(name string) (string, error) {
 	return os.Readlink(name)
 }
 
 // Rmdir removes the specified directory. An error should be returned if the
 // given path does not exists, is not a directory, or has children.
-func (fs HostFS) Rmdir(name string) error {
+func (fs hostFS) Rmdir(name string) error {
 	if !fs.AllowWrite {
 		return ErrPermDenied
 	}
@@ -140,7 +150,7 @@ func (fs HostFS) Rmdir(name string) error {
 
 // Remove removes the specified file. An error should be returned if the path
 // does not exist or it is a directory.
-func (fs HostFS) Remove(name string) error {
+func (fs hostFS) Remove(name string) error {
 	if !fs.AllowWrite {
 		return ErrPermDenied
 	}
@@ -155,7 +165,7 @@ func (fs HostFS) Remove(name string) error {
 }
 
 // RealPath is responsible for producing an absolute path from a relative one.
-func (fs HostFS) RealPath(name string) (string, error) {
+func (fs hostFS) RealPath(name string) (string, error) {
 	return "", ErrOpUnsupported // TODO(samterainsights)
 }
 
