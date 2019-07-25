@@ -1,6 +1,6 @@
 # Golang SFTP Server
 
-[![GoDoc](https://godoc.org/github.com/pkg/sftp?status.svg)](http://godoc.org/github.com/tera-insights/sftp)
+[![GoDoc](https://godoc.org/github.com/tera-insights/sftp?status.svg)](https://godoc.org/github.com/tera-insights/sftp)
 
 The `sftp` package implements the SFTP server protocol. To serve SFTP, you need only an `io.ReadWriter` for the packet transport (typically this will be an SSH channel), and a `RequestHandler` implementation.
 
