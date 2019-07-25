@@ -2,6 +2,8 @@ package sftp
 
 import (
 	"encoding"
+	"fmt"
+	"io"
 	"sort"
 	"sync"
 )
@@ -16,7 +18,7 @@ type packetManager struct {
 	fini      chan struct{}
 	incoming  orderedPackets
 	outgoing  orderedPackets
-	sender    packetSender // connection object
+	writer    io.Writer // connection
 	working   *sync.WaitGroup
 	counter   uint32
 }
@@ -25,14 +27,14 @@ type packetSender interface {
 	sendPacket(encoding.BinaryMarshaler) error
 }
 
-func newPktMgr(sender packetSender) *packetManager {
+func newPktMgr(writer io.Writer) *packetManager {
 	s := &packetManager{
 		requests:  make(chan orderedPacket, sftpServerWorkerCount),
 		responses: make(chan orderedPacket, sftpServerWorkerCount),
 		fini:      make(chan struct{}),
 		incoming:  make([]orderedPacket, 0, sftpServerWorkerCount),
 		outgoing:  make([]orderedPacket, 0, sftpServerWorkerCount),
-		sender:    sender,
+		writer:    writer,
 		working:   &sync.WaitGroup{},
 	}
 	go s.controller()
@@ -170,7 +172,16 @@ func (s *packetManager) maybeSendPackets() {
 		// debug("outgoing: %v", ids(s.outgoing))
 		if in.orderID() == out.orderID() {
 			debug("Sending packet: %v", out.id())
-			s.sender.sendPacket(out.(encoding.BinaryMarshaler))
+			if marshaler, ok := out.(encoding.BinaryMarshaler); ok {
+				if pkt, err := marshaler.MarshalBinary(); err != nil {
+					debug("Error marshaling packet: %v", err)
+				} else if _, err = s.writer.Write(pkt); err != nil {
+					debug("Error sending packet: %v", err)
+				}
+			} else {
+				msg := fmt.Sprintf("cannot send packet (not encoding.BinaryMarshaler): %+v", out)
+				panic(msg)
+			}
 			// pop off heads
 			copy(s.incoming, s.incoming[1:])            // shift left
 			s.incoming[len(s.incoming)-1] = nil         // clear last

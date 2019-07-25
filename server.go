@@ -97,7 +97,7 @@ type RequestHandler interface {
 
 // server abstracts the sftp protocol with an http request-like protocol
 type server struct {
-	*conn
+	io.ReadWriter
 	RequestHandler
 
 	pktMgr       *packetManager
@@ -108,37 +108,30 @@ type server struct {
 	handleCtr    uint32
 }
 
-type noopCloseRWC struct {
-	io.ReadWriter
-}
-
-func (rwc noopCloseRWC) Close() error { return nil }
-
 // Serve the SFTP protocol over a connection. Generally you will want to serve it on top
 // of an SSH "session" channel, however it could also be served over TLS, etc. Note that
 // SFTP has no security provisions so it should always be layered on top of a secure
 // connection.
 func Serve(transport io.ReadWriter, handler RequestHandler) (err error) {
-	conn := &conn{transport}
-	rs := &server{
-		conn:           conn,
+	s := &server{
+		ReadWriter:     transport,
 		RequestHandler: handler,
-		pktMgr:         newPktMgr(conn),
+		pktMgr:         newPktMgr(transport),
 		openFiles:      make(map[string]FileHandle),
 		openDirs:       make(map[string]DirReader),
 	}
-	defer rs.closeAllHandles()
+	defer s.closeAllHandles()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var wg sync.WaitGroup
 
-	pktChan := rs.pktMgr.workerChan(func(ch chan orderedRequest) {
+	pktChan := s.pktMgr.workerChan(func(ch chan orderedRequest) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := rs.packetWorker(ctx, ch); err != nil {
+			if err := s.packetWorker(ctx, ch); err != nil {
 				// FIXME(samterainsights): propagate error
 			}
 		}()
@@ -150,7 +143,7 @@ func Serve(transport io.ReadWriter, handler RequestHandler) (err error) {
 	var pktType uint8
 	var pktBytes []byte
 	for {
-		if pktType, pktBytes, err = readPacket(conn); err != nil {
+		if pktType, pktBytes, err = readPacket(transport); err != nil {
 			return
 		}
 
@@ -158,7 +151,7 @@ func Serve(transport io.ReadWriter, handler RequestHandler) (err error) {
 		if pkt, err = makePacket(fxp(pktType), pktBytes); err != nil {
 			switch errors.Cause(err) {
 			case errUnknownExtendedPacket:
-				if err := rs.sendError(pkt, ErrOpUnsupported); err != nil {
+				if err := s.replyError(pkt, ErrOpUnsupported); err != nil {
 					debug("failed to send err packet: %v", err)
 					// FIXME(samterainsights): propagate error
 					break
@@ -170,11 +163,11 @@ func Serve(transport io.ReadWriter, handler RequestHandler) (err error) {
 			}
 		}
 
-		pktChan <- rs.pktMgr.newOrderedRequest(pkt)
+		pktChan <- s.pktMgr.newOrderedRequest(pkt)
 	}
 }
 
-func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest) error {
+func (s *server) packetWorker(ctx context.Context, pktChan chan orderedRequest) error {
 	for pkt := range pktChan {
 		var rpkt responsePacket
 		switch pkt := pkt.requestPacket.(type) {
@@ -182,25 +175,25 @@ func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest)
 			rpkt = &fxpVersionPkt{Version: ProtocolVersion}
 
 		case *fxpOpenPkt:
-			if f, err := rs.OpenFile(pkt.Path, pkt.PFlags.os(), pkt.Attr.Perms); err != nil {
+			if f, err := s.OpenFile(pkt.Path, pkt.PFlags.os(), pkt.Attr.Perms); err != nil {
 				rpkt = statusFromError(pkt, err)
 			} else {
-				handle := rs.nextHandle()
-				rs.openFilesMtx.Lock()
-				rs.openFiles[handle] = f
-				rs.openFilesMtx.Unlock()
+				handle := s.nextHandle()
+				s.openFilesMtx.Lock()
+				s.openFiles[handle] = f
+				s.openFilesMtx.Unlock()
 				rpkt = &fxpHandlePkt{pkt.ID, handle}
 			}
 
 		case *fxpClosePkt:
-			err := rs.closeFile(pkt.Handle)
+			err := s.closeFile(pkt.Handle)
 			if err == errNoSuchHandle {
-				err = rs.closeDir(pkt.Handle)
+				err = s.closeDir(pkt.Handle)
 			}
 			rpkt = statusFromError(pkt, err)
 
 		case *fxpReadPkt:
-			if f, err := rs.getFile(pkt.Handle); err != nil {
+			if f, err := s.getFile(pkt.Handle); err != nil {
 				rpkt = statusFromError(pkt, err)
 			} else {
 				data := make([]byte, clamp(pkt.Len, maxReadWriteSize))
@@ -214,7 +207,7 @@ func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest)
 			}
 
 		case *fxpWritePkt:
-			if f, err := rs.getFile(pkt.Handle); err != nil {
+			if f, err := s.getFile(pkt.Handle); err != nil {
 				rpkt = statusFromError(pkt, err)
 			} else {
 				_, err = f.WriteAt(pkt.Data, int64(pkt.Offset))
@@ -222,7 +215,7 @@ func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest)
 			}
 
 		case *fxpStatPkt:
-			if info, err := rs.Stat(pkt.Path); err != nil {
+			if info, err := s.Stat(pkt.Path); err != nil {
 				rpkt = statusFromError(pkt, err)
 			} else {
 				rpkt = &fxpAttrPkt{
@@ -232,7 +225,7 @@ func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest)
 			}
 
 		case *fxpLstatPkt:
-			if info, err := rs.Lstat(pkt.Path); err != nil {
+			if info, err := s.Lstat(pkt.Path); err != nil {
 				rpkt = statusFromError(pkt, err)
 			} else {
 				rpkt = &fxpAttrPkt{
@@ -242,7 +235,7 @@ func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest)
 			}
 
 		case *fxpFstatPkt:
-			if f, err := rs.getFile(pkt.Handle); err != nil {
+			if f, err := s.getFile(pkt.Handle); err != nil {
 				rpkt = statusFromError(pkt, err)
 			} else {
 				rpkt = &fxpAttrPkt{
@@ -252,28 +245,28 @@ func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest)
 			}
 
 		case *fxpSetstatPkt:
-			rpkt = statusFromError(pkt, rs.Setstat(pkt.Path, pkt.Attr))
+			rpkt = statusFromError(pkt, s.Setstat(pkt.Path, pkt.Attr))
 
 		case *fxpFsetstatPkt:
-			if f, err := rs.getFile(pkt.Handle); err != nil {
+			if f, err := s.getFile(pkt.Handle); err != nil {
 				rpkt = statusFromError(pkt, err)
 			} else {
 				rpkt = statusFromError(pkt, f.Setstat(pkt.Attr))
 			}
 
 		case *fxpOpendirPkt:
-			if d, err := rs.OpenDir(pkt.Path); err != nil {
+			if d, err := s.OpenDir(pkt.Path); err != nil {
 				rpkt = statusFromError(pkt, err)
 			} else {
-				handle := rs.nextHandle()
-				rs.openDirsMtx.Lock()
-				rs.openDirs[handle] = d
-				rs.openDirsMtx.Unlock()
+				handle := s.nextHandle()
+				s.openDirsMtx.Lock()
+				s.openDirs[handle] = d
+				s.openDirsMtx.Unlock()
 				rpkt = &fxpHandlePkt{pkt.ID, handle}
 			}
 
 		case *fxpReaddirPkt:
-			if d, err := rs.getDir(pkt.Handle); err != nil {
+			if d, err := s.getDir(pkt.Handle); err != nil {
 				rpkt = statusFromError(pkt, err)
 			} else {
 				files := make([]os.FileInfo, MaxReaddirItems)
@@ -292,13 +285,13 @@ func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest)
 			}
 
 		case *fxpRemovePkt:
-			rpkt = statusFromError(pkt, rs.Remove(pkt.Path))
+			rpkt = statusFromError(pkt, s.Remove(pkt.Path))
 
 		case *fxpMkdirPkt:
-			rpkt = statusFromError(pkt, rs.Mkdir(pkt.Path, pkt.Attr))
+			rpkt = statusFromError(pkt, s.Mkdir(pkt.Path, pkt.Attr))
 
 		case *fxpRmdirPkt:
-			rpkt = statusFromError(pkt, rs.Rmdir(pkt.Path))
+			rpkt = statusFromError(pkt, s.Rmdir(pkt.Path))
 
 		case *fxpRealpathPkt:
 			if fpath := path.Clean(pkt.Path); path.IsAbs(fpath) {
@@ -310,7 +303,7 @@ func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest)
 						Attr:     &FileAttr{},
 					}},
 				}
-			} else if abs, err := rs.RealPath(fpath); err != nil {
+			} else if abs, err := s.RealPath(fpath); err != nil {
 				rpkt = statusFromError(pkt, err)
 			} else {
 				rpkt = &fxpNamePkt{
@@ -320,10 +313,10 @@ func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest)
 			}
 
 		case *fxpRenamePkt:
-			rpkt = statusFromError(pkt, rs.Rename(pkt.OldPath, pkt.NewPath))
+			rpkt = statusFromError(pkt, s.Rename(pkt.OldPath, pkt.NewPath))
 
 		case *fxpReadlinkPkt:
-			if fpath, err := rs.ReadLink(pkt.Path); err != nil {
+			if fpath, err := s.ReadLink(pkt.Path); err != nil {
 				rpkt = statusFromError(pkt, err)
 			} else {
 				rpkt = &fxpNamePkt{
@@ -333,15 +326,24 @@ func (rs *server) packetWorker(ctx context.Context, pktChan chan orderedRequest)
 			}
 
 		case *fxpSymlinkPkt:
-			rpkt = statusFromError(pkt, rs.Symlink(pkt.LinkPath, pkt.TargetPath))
+			rpkt = statusFromError(pkt, s.Symlink(pkt.LinkPath, pkt.TargetPath))
 
 		default:
 			rpkt = statusFromError(pkt, ErrOpUnsupported)
 		}
 
-		rs.pktMgr.readyPacket(orderedResponse{rpkt, pkt.orderID()})
+		s.pktMgr.readyPacket(orderedResponse{rpkt, pkt.orderID()})
 	}
 	return nil
+}
+
+func (s *server) replyError(pkt requestPacket, err error) error {
+	b, err := statusFromError(pkt, err).MarshalBinary()
+	if err != nil {
+		return err
+	}
+	_, err = s.Write(b)
+	return err
 }
 
 func clamp(v, max uint32) uint32 {
@@ -351,44 +353,44 @@ func clamp(v, max uint32) uint32 {
 	return v
 }
 
-func (rs *server) nextHandle() string {
-	handle := atomic.AddUint32(&rs.handleCtr, 1)
+func (s *server) nextHandle() string {
+	handle := atomic.AddUint32(&s.handleCtr, 1)
 	return strconv.FormatUint(uint64(handle), 36)
 }
 
-func (rs *server) getFile(handle string) (FileHandle, error) {
-	rs.openFilesMtx.RLock()
-	defer rs.openFilesMtx.RUnlock()
-	if f, exists := rs.openFiles[handle]; exists {
+func (s *server) getFile(handle string) (FileHandle, error) {
+	s.openFilesMtx.RLock()
+	defer s.openFilesMtx.RUnlock()
+	if f, exists := s.openFiles[handle]; exists {
 		return f, nil
 	}
 	return nil, errNoSuchHandle
 }
 
-func (rs *server) closeFile(handle string) error {
-	rs.openFilesMtx.Lock()
-	defer rs.openFilesMtx.Unlock()
-	if f, exists := rs.openFiles[handle]; exists {
-		delete(rs.openFiles, handle)
+func (s *server) closeFile(handle string) error {
+	s.openFilesMtx.Lock()
+	defer s.openFilesMtx.Unlock()
+	if f, exists := s.openFiles[handle]; exists {
+		delete(s.openFiles, handle)
 		return f.Close()
 	}
 	return errNoSuchHandle
 }
 
-func (rs *server) getDir(handle string) (DirReader, error) {
-	rs.openDirsMtx.RLock()
-	defer rs.openDirsMtx.RUnlock()
-	if d, exists := rs.openDirs[handle]; exists {
+func (s *server) getDir(handle string) (DirReader, error) {
+	s.openDirsMtx.RLock()
+	defer s.openDirsMtx.RUnlock()
+	if d, exists := s.openDirs[handle]; exists {
 		return d, nil
 	}
 	return nil, errNoSuchHandle
 }
 
-func (rs *server) closeDir(handle string) error {
-	rs.openDirsMtx.Lock()
-	defer rs.openDirsMtx.Unlock()
-	if d, exists := rs.openDirs[handle]; exists {
-		delete(rs.openDirs, handle)
+func (s *server) closeDir(handle string) error {
+	s.openDirsMtx.Lock()
+	defer s.openDirsMtx.Unlock()
+	if d, exists := s.openDirs[handle]; exists {
+		delete(s.openDirs, handle)
 		if closer, ok := d.(io.Closer); ok {
 			return closer.Close()
 		}
@@ -398,20 +400,20 @@ func (rs *server) closeDir(handle string) error {
 }
 
 // closeAllHandles closes all open file/directory handles.
-func (rs *server) closeAllHandles() {
-	rs.openFilesMtx.Lock()
-	for handle, file := range rs.openFiles {
+func (s *server) closeAllHandles() {
+	s.openFilesMtx.Lock()
+	for handle, file := range s.openFiles {
 		file.Close() // TODO(samterainsights): propagate error somehow
-		delete(rs.openFiles, handle)
+		delete(s.openFiles, handle)
 	}
-	rs.openFilesMtx.Unlock()
+	s.openFilesMtx.Unlock()
 
-	rs.openDirsMtx.Lock()
-	for handle, dir := range rs.openDirs {
+	s.openDirsMtx.Lock()
+	for handle, dir := range s.openDirs {
 		if closer, ok := dir.(io.Closer); ok {
 			closer.Close() // TODO(samterainsights): propagate error somehow
 		}
-		delete(rs.openDirs, handle)
+		delete(s.openDirs, handle)
 	}
-	rs.openDirsMtx.Unlock()
+	s.openDirsMtx.Unlock()
 }
