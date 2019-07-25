@@ -88,22 +88,22 @@ func (fs HostFS) Setstat(name string, attr *FileAttr) (err error) {
 	if !fs.AllowWrite {
 		return ErrPermDenied
 	}
-	if attr.Flags&attrFlagSize != 0 {
+	if attr.Flags&AttrFlagSize != 0 {
 		if err = os.Truncate(name, int64(attr.Size)); err != nil {
 			return
 		}
 	}
-	if attr.Flags&attrFlagPermissions != 0 {
+	if attr.Flags&AttrFlagPermissions != 0 {
 		if err = os.Chmod(name, attr.Perms); err != nil {
 			return
 		}
 	}
-	if attr.Flags&attrFlagAcModTime != 0 {
+	if attr.Flags&AttrFlagAcModTime != 0 {
 		if err = os.Chtimes(name, attr.AcTime, attr.ModTime); err != nil {
 			return
 		}
 	}
-	if attr.Flags&attrFlagUIDGID != 0 {
+	if attr.Flags&AttrFlagUIDGID != 0 {
 		err = os.Chown(name, int(attr.UID), int(attr.GID))
 	}
 	return
@@ -177,22 +177,22 @@ func (f hostFile) Close() error {
 }
 
 func (f hostFile) Setstat(attr *FileAttr) (err error) {
-	if attr.Flags&attrFlagSize != 0 {
+	if attr.Flags&AttrFlagSize != 0 {
 		if err = f.raw.Truncate(int64(attr.Size)); err != nil {
 			return
 		}
 	}
-	if attr.Flags&attrFlagPermissions != 0 {
+	if attr.Flags&AttrFlagPermissions != 0 {
 		if err = f.raw.Chmod(attr.Perms); err != nil {
 			return
 		}
 	}
-	if attr.Flags&attrFlagAcModTime != 0 {
+	if attr.Flags&AttrFlagAcModTime != 0 {
 		if err = os.Chtimes(f.raw.Name(), attr.AcTime, attr.ModTime); err != nil {
 			return
 		}
 	}
-	if attr.Flags&attrFlagUIDGID != 0 {
+	if attr.Flags&AttrFlagUIDGID != 0 {
 		if err = f.raw.Chown(int(attr.UID), int(attr.GID)); err != nil {
 			return
 		}

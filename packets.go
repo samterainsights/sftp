@@ -9,10 +9,12 @@ package sftp
 
 type fxpInitPkt struct {
 	Version    uint32
-	Extensions []extensionPair
+	Extensions []Extension
 }
 
-type extensionPair struct {
+// An Extension is a key-value pair where the name is the extension name and the
+// value is some abitrary data encoded as a string.
+type Extension struct {
 	Name string
 	Data string
 }
@@ -42,7 +44,7 @@ func (p *fxpInitPkt) UnmarshalBinary(b []byte) (err error) {
 		return
 	}
 	for len(b) > 0 {
-		var ext extensionPair
+		var ext Extension
 		if ext.Name, b, err = takeStr(b); err != nil {
 			return
 		}
@@ -57,7 +59,7 @@ func (p *fxpInitPkt) UnmarshalBinary(b []byte) (err error) {
 // fxpVersionPkt is ALMOST identical to fxpInitPkt--type byte is different!
 type fxpVersionPkt struct {
 	Version    uint32
-	Extensions []extensionPair
+	Extensions []Extension
 }
 
 // TODO(samterainsights): eliminate the need for this fake method. Currently needed
@@ -85,7 +87,7 @@ func (p *fxpVersionPkt) UnmarshalBinary(b []byte) (err error) {
 		return
 	}
 	for len(b) > 0 {
-		var ext extensionPair
+		var ext Extension
 		if ext.Name, b, err = takeStr(b); err != nil {
 			return
 		}

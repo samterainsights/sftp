@@ -12,12 +12,25 @@ import (
 type attrFlag uint32
 
 const (
-	attrFlagSize = attrFlag(1 << iota)
-	attrFlagUIDGID
-	attrFlagPermissions
-	attrFlagAcModTime
+	// AttrFlagSize indicates that the size field is present on a FileAttr.
+	AttrFlagSize = attrFlag(1 << iota)
+
+	// AttrFlagUIDGID indicates that the UID/GID fields are present on a
+	// FileAttr.
+	AttrFlagUIDGID
+
+	// AttrFlagPermissions indicates that the permissions field is present
+	// on a FileAttr.
+	AttrFlagPermissions
+
+	// AttrFlagAcModTime indicates the access time and modification time
+	// fields are present on a FileAttr.
+	AttrFlagAcModTime
+
 	// -- room left in protocol for more flag bits --
-	attrFlagExtended = attrFlag(1 << 31)
+
+	// AttrFlagExtended indicates that extensions are present on a FileAttr.
+	AttrFlagExtended = attrFlag(1 << 31)
 )
 
 // fileInfo is an artificial type for wrapping a FileAttr with the os.FileInfo interface.
@@ -39,48 +52,37 @@ func (fi *fileInfo) Sys() interface{}   { return fi.sys }
 // FileAttr is a Golang idiomatic represention of the SFTP file attributes
 // present on some requests, described here:
 // https://tools.ietf.org/html/draft-ietf-secsh-filexfer-02#section-5
+//
+// TODO(samterainsights): validate flags on incoming packets and return a
+// protocol error per the spec if unknown flags are set.
 type FileAttr struct {
-	// TODO(samterainsights): validate flags on incoming packets and return error if bits unknown
-	// to the negotiated protocol version are set:
-	//
-	//	"It is a protocol error if a packet with unsupported protocol bits is received."
-	//		-- https://tools.ietf.org/html/draft-ietf-secsh-filexfer-02#section-5
-	Flags attrFlag
-
-	// SFTP specifies uint64: do not cast to int64 for Golang's sake or we may lose information!
-	Size uint64
-
-	UID, GID        uint32
-	Perms           os.FileMode
-	AcTime, ModTime time.Time
-	Extensions      []StatExtended
-}
-
-// StatExtended contains additional, extended information for a FileAttr.
-type StatExtended struct {
-	ExtType string
-	ExtData string
+	Flags           attrFlag    // Indicates which fields were included on the packet
+	Size            uint64      // Only valid if Flags&AttrFlagSize != 0
+	UID, GID        uint32      // Only valid if Flags&AttrFlagUIDGID != 0
+	Perms           os.FileMode // Only valid if Flags&AttrFlagPermissions != 0
+	AcTime, ModTime time.Time   // Only valid if Flags&AttrFlagAcModTime != 0
+	Extensions      []Extension // Only valid if Flags&AttrFlagExtended != 0
 }
 
 func (attr *FileAttr) encodedSize() int {
 	size := 4 // uint32 flags
-	if attr.Flags&attrFlagSize != 0 {
+	if attr.Flags&AttrFlagSize != 0 {
 		size += 8 // uint64 size
 	}
-	if attr.Flags&attrFlagUIDGID != 0 {
+	if attr.Flags&AttrFlagUIDGID != 0 {
 		size += 8 // uint32 uid + uint32 gid
 	}
-	if attr.Flags&attrFlagPermissions != 0 {
+	if attr.Flags&AttrFlagPermissions != 0 {
 		size += 4 // uint32 permissions
 	}
-	if attr.Flags&attrFlagAcModTime != 0 {
+	if attr.Flags&AttrFlagAcModTime != 0 {
 		size += 8 // uint32 atime + uint32 mtime
 	}
-	if attr.Flags&attrFlagExtended != 0 {
+	if attr.Flags&AttrFlagExtended != 0 {
 		size += 4 // uint32 extended_count
 		for _, ext := range attr.Extensions {
 			// two strings, each: uint32 length + [data]
-			size += 8 + len(ext.ExtType) + len(ext.ExtData)
+			size += 8 + len(ext.Name) + len(ext.Data)
 		}
 	}
 	return size
@@ -104,7 +106,7 @@ func fileAttrFromInfo(fi os.FileInfo) *FileAttr {
 
 	mtime := fi.ModTime()
 	attr := &FileAttr{
-		Flags:   attrFlagSize | attrFlagPermissions | attrFlagAcModTime,
+		Flags:   AttrFlagSize | AttrFlagPermissions | AttrFlagAcModTime,
 		Size:    uint64(fi.Size()),
 		Perms:   fi.Mode(),
 		AcTime:  mtime,

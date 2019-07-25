@@ -20,17 +20,17 @@ var unmarshalAttrsTests = []struct {
 	{marshal(nil, struct {
 		Flags uint32
 		Size  uint64
-	}{attrFlagSize, 20}), &fileInfo{size: 20, mtime: time.Unix(int64(0), 0)}, nil},
+	}{AttrFlagSize, 20}), &fileInfo{size: 20, mtime: time.Unix(int64(0), 0)}, nil},
 	{marshal(nil, struct {
 		Flags       uint32
 		Size        uint64
 		Permissions uint32
-	}{attrFlagSize | attrFlagPermissions, 20, 0644}), &fileInfo{size: 20, mode: os.FileMode(0644), mtime: time.Unix(int64(0), 0)}, nil},
+	}{AttrFlagSize | AttrFlagPermissions, 20, 0644}), &fileInfo{size: 20, mode: os.FileMode(0644), mtime: time.Unix(int64(0), 0)}, nil},
 	{marshal(nil, struct {
 		Flags                 uint32
 		Size                  uint64
 		UID, GID, Permissions uint32
-	}{attrFlagSize | attrFlagUIDGID | attrFlagUIDGID | attrFlagPermissions, 20, 1000, 1000, 0644}), &fileInfo{size: 20, mode: os.FileMode(0644), mtime: time.Unix(int64(0), 0)}, nil},
+	}{AttrFlagSize | AttrFlagUIDGID | AttrFlagUIDGID | AttrFlagPermissions, 20, 1000, 1000, 0644}), &fileInfo{size: 20, mode: os.FileMode(0644), mtime: time.Unix(int64(0), 0)}, nil},
 }
 
 func TestUnmarshalAttrs(t *testing.T) {

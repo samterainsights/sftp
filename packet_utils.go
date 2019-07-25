@@ -39,25 +39,25 @@ func appendAttr(b []byte, attr *FileAttr) []byte {
 	flags := attr.Flags
 	b = appendU32(b, uint32(flags))
 
-	if flags&attrFlagSize != 0 {
+	if flags&AttrFlagSize != 0 {
 		b = appendU64(b, attr.Size)
 	}
-	if flags&attrFlagUIDGID != 0 {
+	if flags&AttrFlagUIDGID != 0 {
 		b = appendU32(b, attr.UID)
 		b = appendU32(b, attr.GID)
 	}
-	if flags&attrFlagPermissions != 0 {
+	if flags&AttrFlagPermissions != 0 {
 		b = appendU32(b, fromFileMode(attr.Perms))
 	}
-	if flags&attrFlagAcModTime != 0 {
+	if flags&AttrFlagAcModTime != 0 {
 		b = appendU32(b, uint32(attr.AcTime.Unix()))
 		b = appendU32(b, uint32(attr.ModTime.Unix()))
 	}
-	if flags&attrFlagExtended != 0 {
+	if flags&AttrFlagExtended != 0 {
 		b = appendU32(b, uint32(len(attr.Extensions)))
 		for _, ext := range attr.Extensions {
-			b = appendStr(b, ext.ExtType)
-			b = appendStr(b, ext.ExtData)
+			b = appendStr(b, ext.Name)
+			b = appendStr(b, ext.Data)
 		}
 	}
 
@@ -104,12 +104,12 @@ func takeAttr(b []byte) (_ *FileAttr, _ []byte, err error) {
 	}
 	attr.Flags = attrFlag(flag)
 
-	if attr.Flags&attrFlagSize != 0 {
+	if attr.Flags&AttrFlagSize != 0 {
 		if attr.Size, b, err = takeU64(b); err != nil {
 			return
 		}
 	}
-	if attr.Flags&attrFlagUIDGID != 0 {
+	if attr.Flags&AttrFlagUIDGID != 0 {
 		if attr.UID, b, err = takeU32(b); err != nil {
 			return
 		}
@@ -117,14 +117,14 @@ func takeAttr(b []byte) (_ *FileAttr, _ []byte, err error) {
 			return
 		}
 	}
-	if attr.Flags&attrFlagPermissions != 0 {
+	if attr.Flags&AttrFlagPermissions != 0 {
 		var perms uint32
 		if perms, b, err = takeU32(b); err != nil {
 			return
 		}
 		attr.Perms = toFileMode(perms)
 	}
-	if attr.Flags&attrFlagAcModTime != 0 {
+	if attr.Flags&AttrFlagAcModTime != 0 {
 		var atime, mtime uint32
 		if atime, b, err = takeU32(b); err != nil {
 			return
@@ -135,18 +135,18 @@ func takeAttr(b []byte) (_ *FileAttr, _ []byte, err error) {
 		attr.AcTime = time.Unix(int64(atime), 0)
 		attr.ModTime = time.Unix(int64(mtime), 0)
 	}
-	if attr.Flags&attrFlagExtended != 0 {
+	if attr.Flags&AttrFlagExtended != 0 {
 		var count uint32
 		if count, b, err = takeU32(b); err != nil {
 			return
 		}
 
-		attr.Extensions = make([]StatExtended, count)
+		attr.Extensions = make([]Extension, count)
 		for i := uint32(0); i < count; i++ {
-			if attr.Extensions[i].ExtType, b, err = takeStr(b); err != nil {
+			if attr.Extensions[i].Name, b, err = takeStr(b); err != nil {
 				return
 			}
-			if attr.Extensions[i].ExtData, b, err = takeStr(b); err != nil {
+			if attr.Extensions[i].Data, b, err = takeStr(b); err != nil {
 				return
 			}
 		}
