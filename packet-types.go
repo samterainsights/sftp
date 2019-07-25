@@ -113,7 +113,8 @@ type ider interface {
 	id() uint32
 }
 
-// all incoming packets
+// TODO(samterainsights): flesh out better typing for packets so we don't
+// need to add fake stuff to init/version packets.
 type requestPacket interface {
 	encoding.BinaryUnmarshaler
 	ider
