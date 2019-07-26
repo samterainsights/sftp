@@ -144,11 +144,9 @@ func (s *packetManager) controller() {
 	for {
 		select {
 		case pkt := <-s.requests:
-			debug("incoming id (oid): %v (%v)", pkt.id(), pkt.orderID())
 			s.incoming = append(s.incoming, pkt)
 			s.incoming.Sort()
 		case pkt := <-s.responses:
-			debug("outgoing id (oid): %v (%v)", pkt.id(), pkt.orderID())
 			s.outgoing = append(s.outgoing, pkt)
 			s.outgoing.Sort()
 		case <-s.fini:
@@ -162,16 +160,11 @@ func (s *packetManager) controller() {
 func (s *packetManager) maybeSendPackets() {
 	for {
 		if len(s.outgoing) == 0 || len(s.incoming) == 0 {
-			debug("break! -- outgoing: %v; incoming: %v",
-				len(s.outgoing), len(s.incoming))
 			break
 		}
 		out := s.outgoing[0]
 		in := s.incoming[0]
-		// debug("incoming: %v", ids(s.incoming))
-		// debug("outgoing: %v", ids(s.outgoing))
 		if in.orderID() == out.orderID() {
-			debug("Sending packet: %v", out.id())
 			if marshaler, ok := out.(encoding.BinaryMarshaler); ok {
 				if pkt, err := marshaler.MarshalBinary(); err != nil {
 					debug("Error marshaling packet: %v", err)

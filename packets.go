@@ -614,7 +614,7 @@ func (p *fxpNamePkt) id() uint32 { return p.ID }
 
 func (p *fxpNamePkt) MarshalBinary() ([]byte, error) {
 	// Compute packet data length (not including length or type prefix)
-	dataLen := 4 // uint32 ID
+	dataLen := 4 + 4 // uint32 ID + uint32 count
 	for _, item := range p.Items {
 		dataLen += (4 + len(item.Name)) + (4 + len(item.LongName)) + item.Attr.encodedSize()
 	}
