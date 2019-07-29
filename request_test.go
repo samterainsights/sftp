@@ -119,12 +119,12 @@ func (h *Handlers) returnError(err error) {
 
 func getStatusMsg(p interface{}) string {
 	pkt := p.(fxpStatusPkt)
-	return pkt.StatusError.msg
+	return pkt.Status.Msg
 }
 func checkOkStatus(t *testing.T, p interface{}) {
 	pkt := p.(fxpStatusPkt)
-	assert.Equal(t, pkt.StatusError.Code, uint32(fxOK),
-		"fxpStatusPkt not OK\n", pkt.StatusError.msg)
+	assert.Equal(t, pkt.Status.Code, uint32(fxOK),
+		"fxpStatusPkt not OK\n", pkt.Status.Msg)
 }
 
 // fake/test packet

@@ -26,7 +26,7 @@ const (
 	// Newer error codes
 	// https://tools.ietf.org/html/draft-ietf-secsh-filexfer-13#section-9.1
 	fxInvalidHandle           = 9
-	fxNoSuchPath              = 10
+	fxNoSuchPath              = 10 // I think this is identical to SSH_FX_NO_SUCH_FILE but also can mean "invalid path"
 	fxFileAlreadyExists       = 11
 	fxWriteProtected          = 12
 	fxNoMedia                 = 13
@@ -99,6 +99,8 @@ const (
 
 func (e fxerr) Error() string {
 	switch e {
+	case fxOK:
+		return "No Error Occurred"
 	case ErrEOF:
 		return "EOF"
 	case ErrNoSuchFile:
@@ -122,18 +124,34 @@ func (e fxerr) Error() string {
 	}
 }
 
-// A StatusError is returned when an SFTP operation fails, and provides
-// additional information about the failure.
-type StatusError struct {
-	Code      uint32
-	msg, lang string
+// WithMessage wraps the error code in a *Status with the given message
+// and "en" (English) as the language tag.
+func (e fxerr) WithMessage(msg string) error {
+	return &Status{uint32(e), msg, "en"}
 }
 
-func (s *StatusError) Error() string {
-	if s.msg == "" {
+// WithMessagef is identical to WithMessage but takes a format string with
+// arguments.
+func (e fxerr) WithMessagef(format string, args ...interface{}) error {
+	return e.WithMessage(fmt.Sprintf(format, args...))
+}
+
+// A Status is an SFTP-defined type for conveying errors as well as success replies
+// with no data. Status is exported so RequestHandler implementations may use it
+// for more complete control over what gets sent back to the client.
+//
+// https://tools.ietf.org/pdf/draft-ietf-secsh-filexfer-02.pdf#38
+type Status struct {
+	Code uint32 // Status code
+	Msg  string // Optional message with more details
+	Lang string // Optional ISO 639 language tag for Msg
+}
+
+func (s *Status) Error() string {
+	if s.Msg == "" {
 		return fmt.Sprintf("sftp: %s", fxerr(s.Code))
 	}
-	return fmt.Sprintf("sftp: %s (%s)", fxerr(s.Code), s.msg)
+	return fmt.Sprintf("sftp: %s (%s)", fxerr(s.Code), s.Msg)
 }
 
 // translateErrno translates a syscall error number to an SFTP error code.
@@ -145,24 +163,24 @@ func translateErrno(errno syscall.Errno) uint32 {
 		return fxNoSuchFile
 	case syscall.EPERM:
 		return fxPermissionDenied
+	case syscall.ENOTDIR:
+		return fxNotADirectory
+	case syscall.ENOTEMPTY:
+		return fxDirNotEmpty
+		// TODO(samterainsights): there are definitely more 1-to-1 mappings we can include
 	}
 
 	return fxFailure
 }
 
 func statusFromError(p ider, err error) *fxpStatusPkt {
+	if status, ok := err.(*Status); ok {
+		return &fxpStatusPkt{p.id(), *status}
+	}
+
 	ret := &fxpStatusPkt{
 		ID: p.id(),
-		StatusError: StatusError{
-			// fxOK                = 0
-			// fxEOF               = 1
-			// fxNoSuchFile      = 2 ENOENT
-			// fxPermissionDenied = 3
-			// fxFailure           = 4
-			// fxBadMessage       = 5
-			// fxNoConnection     = 6
-			// fxConnectionLost   = 7
-			// fxOpUnsupported    = 8
+		Status: Status{
 			Code: fxOK,
 		},
 	}
@@ -171,25 +189,25 @@ func statusFromError(p ider, err error) *fxpStatusPkt {
 	}
 
 	debug("statusFromError: error is %T %#v", err, err)
-	ret.StatusError.Code = fxFailure
-	ret.StatusError.msg = err.Error()
+	ret.Status.Code = fxFailure
+	ret.Status.Msg = err.Error()
 
 	switch e := err.(type) {
 	case syscall.Errno:
-		ret.StatusError.Code = translateErrno(e)
+		ret.Status.Code = translateErrno(e)
 	case *os.PathError:
 		debug("statusFromError,pathError: error is %T %#v", e.Err, e.Err)
 		if errno, ok := e.Err.(syscall.Errno); ok {
-			ret.StatusError.Code = translateErrno(errno)
+			ret.Status.Code = translateErrno(errno)
 		}
 	case fxerr:
-		ret.StatusError.Code = uint32(e)
+		ret.Status.Code = uint32(e)
 	default:
 		switch e {
 		case io.EOF:
-			ret.StatusError.Code = fxEOF
+			ret.Status.Code = fxEOF
 		case os.ErrNotExist:
-			ret.StatusError.Code = fxNoSuchFile
+			ret.Status.Code = fxNoSuchFile
 		}
 	}
 

@@ -124,7 +124,7 @@ func ExampleClient_Mkdir_parents() {
 			}
 			parents = path.Join(parents, name)
 			err = client.Mkdir(parents)
-			if status, ok := err.(*sftp.StatusError); ok {
+			if status, ok := err.(*sftp.Status); ok {
 				if status.Code == sshFxFailure {
 					var fi os.FileInfo
 					fi, err = client.Stat(parents)

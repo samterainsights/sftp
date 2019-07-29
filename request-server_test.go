@@ -255,7 +255,7 @@ func TestRequestRenameFail(t *testing.T) {
 	_, err = putTestFile(p.cli, "/bar", "goodbye")
 	assert.Nil(t, err)
 	err = p.cli.Rename("/foo", "/bar")
-	assert.IsType(t, &StatusError{}, err)
+	assert.IsType(t, &Status{}, err)
 }
 
 func TestRequestStat(t *testing.T) {
@@ -357,7 +357,7 @@ func TestRequestReaddir(t *testing.T) {
 		}
 	}
 	_, err := p.cli.ReadDir("/foo_01")
-	assert.Equal(t, &StatusError{Code: fxFailure,
+	assert.Equal(t, &Status{Code: fxFailure,
 		msg: " /foo_01: not a directory"}, err)
 	_, err = p.cli.ReadDir("/does_not_exist")
 	assert.Equal(t, os.ErrNotExist, err)

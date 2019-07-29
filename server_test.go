@@ -215,9 +215,9 @@ func TestInvalidExtendedPacket(t *testing.T) {
 	}
 
 	err = unmarshalStatus(badPacket.id(), data)
-	statusErr, ok := err.(*StatusError)
+	statusErr, ok := err.(*Status)
 	if !ok {
-		t.Fatal("failed to convert error from unmarshalStatus to *StatusError")
+		t.Fatal("failed to convert error from unmarshalStatus to *Status")
 	}
 	if statusErr.Code != fxOpUnsupported {
 		t.Errorf("statusErr.Code => %d, wanted %d", statusErr.Code, fxOpUnsupported)
@@ -262,7 +262,7 @@ func TestStatusFromError(t *testing.T) {
 	tpkt := func(id, code uint32) fxpStatusPkt {
 		return fxpStatusPkt{
 			ID:          id,
-			StatusError: StatusError{Code: code},
+			Status: Status{Code: code},
 		}
 	}
 	testCases := []test{
@@ -276,7 +276,7 @@ func TestStatusFromError(t *testing.T) {
 		test{os.ErrNotExist, tpkt(7, fxNoSuchFile)},
 	}
 	for _, tc := range testCases {
-		tc.pkt.StatusError.msg = tc.err.Error()
+		tc.pkt.Status.Msg = tc.err.Error()
 		assert.Equal(t, tc.pkt, statusFromError(tc.pkt, tc.err))
 	}
 }

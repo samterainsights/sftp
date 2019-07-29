@@ -522,17 +522,17 @@ func (p *fxpExtendedPkt) UnmarshalBinary(b []byte) (err error) {
 
 type fxpStatusPkt struct {
 	ID uint32
-	StatusError
+	Status
 }
 
 func (p *fxpStatusPkt) id() uint32 { return p.ID }
 
 func (p *fxpStatusPkt) MarshalBinary() ([]byte, error) {
-	b := allocPkt(fxpStatus, 4+4+(4+len(p.msg))+(4+len(p.lang)))
+	b := allocPkt(fxpStatus, 4+4+(4+len(p.Msg))+(4+len(p.Lang)))
 	b = appendU32(b, p.ID)
 	b = appendU32(b, p.Code)
-	b = appendStr(b, p.msg)
-	return appendStr(b, p.lang), nil
+	b = appendStr(b, p.Msg)
+	return appendStr(b, p.Lang), nil
 }
 
 func (p *fxpStatusPkt) UnmarshalBinary(b []byte) (err error) {
@@ -542,10 +542,10 @@ func (p *fxpStatusPkt) UnmarshalBinary(b []byte) (err error) {
 	if p.Code, b, err = takeU32(b); err != nil {
 		return
 	}
-	if p.msg, b, err = takeStr(b); err != nil {
+	if p.Msg, b, err = takeStr(b); err != nil {
 		return
 	}
-	p.lang, _, err = takeStr(b)
+	p.Lang, _, err = takeStr(b)
 	return
 }
 
