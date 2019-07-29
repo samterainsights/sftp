@@ -48,7 +48,8 @@ type DirReader interface {
 
 // RequestHandler is responsible for handling the various kinds of SFTP requests.
 // Two implementations are provided by this library: an in-memory filesystem and
-// a wrapper around the OS filesystem.
+// a wrapper around the OS filesystem. All paths are cleaned before being passed
+// to a RequestHandler.
 type RequestHandler interface {
 	// OpenFile should behave identically to os.OpenFile.
 	OpenFile(string, int, os.FileMode) (FileHandle, error)
@@ -175,7 +176,7 @@ func (s *server) packetWorker(ctx context.Context, pktChan chan orderedRequest) 
 			rpkt = &fxpVersionPkt{Version: ProtocolVersion}
 
 		case *fxpOpenPkt:
-			if f, err := s.OpenFile(pkt.Path, pkt.PFlags.os(), pkt.Attr.Perms); err != nil {
+			if f, err := s.OpenFile(path.Clean(pkt.Path), pkt.PFlags.os(), pkt.Attr.Perms); err != nil {
 				rpkt = statusFromError(pkt, err)
 			} else {
 				handle := s.nextHandle()
@@ -215,7 +216,7 @@ func (s *server) packetWorker(ctx context.Context, pktChan chan orderedRequest) 
 			}
 
 		case *fxpStatPkt:
-			if info, err := s.Stat(pkt.Path); err != nil {
+			if info, err := s.Stat(path.Clean(pkt.Path)); err != nil {
 				rpkt = statusFromError(pkt, err)
 			} else {
 				rpkt = &fxpAttrPkt{
@@ -225,7 +226,7 @@ func (s *server) packetWorker(ctx context.Context, pktChan chan orderedRequest) 
 			}
 
 		case *fxpLstatPkt:
-			if info, err := s.Lstat(pkt.Path); err != nil {
+			if info, err := s.Lstat(path.Clean(pkt.Path)); err != nil {
 				rpkt = statusFromError(pkt, err)
 			} else {
 				rpkt = &fxpAttrPkt{
@@ -245,7 +246,7 @@ func (s *server) packetWorker(ctx context.Context, pktChan chan orderedRequest) 
 			}
 
 		case *fxpSetstatPkt:
-			rpkt = statusFromError(pkt, s.Setstat(pkt.Path, pkt.Attr))
+			rpkt = statusFromError(pkt, s.Setstat(path.Clean(pkt.Path), pkt.Attr))
 
 		case *fxpFsetstatPkt:
 			if f, err := s.getFile(pkt.Handle); err != nil {
@@ -255,7 +256,7 @@ func (s *server) packetWorker(ctx context.Context, pktChan chan orderedRequest) 
 			}
 
 		case *fxpOpendirPkt:
-			if d, err := s.OpenDir(pkt.Path); err != nil {
+			if d, err := s.OpenDir(path.Clean(pkt.Path)); err != nil {
 				rpkt = statusFromError(pkt, err)
 			} else {
 				handle := s.nextHandle()
@@ -285,13 +286,13 @@ func (s *server) packetWorker(ctx context.Context, pktChan chan orderedRequest) 
 			}
 
 		case *fxpRemovePkt:
-			rpkt = statusFromError(pkt, s.Remove(pkt.Path))
+			rpkt = statusFromError(pkt, s.Remove(path.Clean(pkt.Path)))
 
 		case *fxpMkdirPkt:
-			rpkt = statusFromError(pkt, s.Mkdir(pkt.Path, pkt.Attr))
+			rpkt = statusFromError(pkt, s.Mkdir(path.Clean(pkt.Path), pkt.Attr))
 
 		case *fxpRmdirPkt:
-			rpkt = statusFromError(pkt, s.Rmdir(pkt.Path))
+			rpkt = statusFromError(pkt, s.Rmdir(path.Clean(pkt.Path)))
 
 		case *fxpRealpathPkt:
 			if fpath := path.Clean(pkt.Path); path.IsAbs(fpath) {
@@ -313,10 +314,13 @@ func (s *server) packetWorker(ctx context.Context, pktChan chan orderedRequest) 
 			}
 
 		case *fxpRenamePkt:
-			rpkt = statusFromError(pkt, s.Rename(pkt.OldPath, pkt.NewPath))
+			rpkt = statusFromError(pkt, s.Rename(
+				path.Clean(pkt.OldPath),
+				path.Clean(pkt.NewPath),
+			))
 
 		case *fxpReadlinkPkt:
-			if fpath, err := s.ReadLink(pkt.Path); err != nil {
+			if fpath, err := s.ReadLink(path.Clean(pkt.Path)); err != nil {
 				rpkt = statusFromError(pkt, err)
 			} else {
 				rpkt = &fxpNamePkt{
@@ -326,7 +330,10 @@ func (s *server) packetWorker(ctx context.Context, pktChan chan orderedRequest) 
 			}
 
 		case *fxpSymlinkPkt:
-			rpkt = statusFromError(pkt, s.Symlink(pkt.LinkPath, pkt.TargetPath))
+			rpkt = statusFromError(pkt, s.Symlink(
+				path.Clean(pkt.LinkPath),
+				path.Clean(pkt.TargetPath),
+			))
 
 		default:
 			rpkt = statusFromError(pkt, ErrOpUnsupported)
