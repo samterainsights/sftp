@@ -8,6 +8,8 @@ This package currently provides two `RequestHandler` implementations for your co
 
 See the [GoDoc](http://godoc.org/github.com/tera-insights/sftp) for full documentation and small examples. Larger examples can be found in the `examples/` folder.
 
+When building your executable, include the `sftp_debug` [build tag](https://dave.cheney.net/2014/09/28/using-build-to-switch-between-debug-and-release) to compile this library with debugging output.
+
 ## Contributing
 
 We welcome pull requests, bug fixes and issue reports.

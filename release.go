@@ -1,4 +1,4 @@
-// +build !debug
+// +build !sftp_debug
 
 package sftp
 
