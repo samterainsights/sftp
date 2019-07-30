@@ -95,6 +95,11 @@ const (
 	// in a context where a directory cannot be used; directly translates to
 	// SSH_FX_FILE_IS_A_DIRECTORY.
 	ErrIsADirectory = fxerr(fxIsADirectory)
+
+	// ErrWriteProtected indicates that the file may not be written to for some
+	// reason, e.g., it is on read-only media; directly translates to
+	// SSH_FX_WRITE_PROTECT.
+	ErrWriteProtected = fxerr(fxWriteProtected)
 )
 
 func (e fxerr) Error() string {
