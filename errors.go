@@ -188,7 +188,7 @@ func statusFromError(p ider, err error) *fxpStatusPkt {
 		return ret
 	}
 
-	debug("statusFromError: error is %T %#v", err, err)
+	debug("statusFromError[type=%T val=%#v msg=%q]", err, err, err.Error())
 	ret.Status.Code = fxFailure
 	ret.Status.Msg = err.Error()
 
@@ -196,7 +196,6 @@ func statusFromError(p ider, err error) *fxpStatusPkt {
 	case syscall.Errno:
 		ret.Status.Code = translateErrno(e)
 	case *os.PathError:
-		debug("statusFromError,pathError: error is %T %#v", e.Err, e.Err)
 		if errno, ok := e.Err.(syscall.Errno); ok {
 			ret.Status.Code = translateErrno(errno)
 		}
