@@ -273,7 +273,7 @@ func (s *server) packetWorker(ctx context.Context, pktChan chan orderedRequest) 
 				files := make([]os.FileInfo, MaxReaddirItems)
 				if n, err := d.ReadEntries(files); n > 0 {
 					items := make([]fxpNamePktItem, n)
-					for i, f := range files {
+					for i, f := range files[:n] {
 						name := f.Name()
 						items[i].Name = name
 						items[i].LongName = name
