@@ -33,22 +33,6 @@ const (
 	AttrFlagExtended = attrFlag(1 << 31)
 )
 
-// fileInfo is an artificial type for wrapping a FileAttr with the os.FileInfo interface.
-type fileInfo struct {
-	name  string
-	size  int64
-	mode  os.FileMode
-	mtime time.Time
-	sys   interface{}
-}
-
-func (fi *fileInfo) Name() string       { return fi.name }
-func (fi *fileInfo) Size() int64        { return fi.size }
-func (fi *fileInfo) Mode() os.FileMode  { return fi.mode }
-func (fi *fileInfo) ModTime() time.Time { return fi.mtime }
-func (fi *fileInfo) IsDir() bool        { return fi.Mode().IsDir() }
-func (fi *fileInfo) Sys() interface{}   { return fi.sys }
-
 // FileAttr is a Golang idiomatic represention of the SFTP file attributes
 // present on some requests, described here:
 // https://tools.ietf.org/html/draft-ietf-secsh-filexfer-02#section-5
@@ -88,17 +72,6 @@ func (attr *FileAttr) encodedSize() int {
 	return size
 }
 
-func fileInfoFromStat(st *FileAttr, name string) os.FileInfo {
-	fs := &fileInfo{
-		name:  name,
-		size:  int64(st.Size),
-		mode:  st.Perms,
-		mtime: st.ModTime,
-		sys:   st,
-	}
-	return fs
-}
-
 func fileAttrFromInfo(fi os.FileInfo) *FileAttr {
 	if attr, ok := fi.Sys().(*FileAttr); ok {
 		return attr
@@ -117,10 +90,6 @@ func fileAttrFromInfo(fi os.FileInfo) *FileAttr {
 	fileAttrFromInfoOS(fi, attr)
 
 	return attr
-}
-
-func marshalFileInfo(b []byte, fi os.FileInfo) []byte {
-	return appendAttr(b, fileAttrFromInfo(fi))
 }
 
 // toFileMode converts sftp filemode bits to the os.FileMode specification
