@@ -5,7 +5,6 @@ package sftp
 // works as a very simple filesystem with simple flat key-value lookup system.
 
 import (
-	"bytes"
 	"io"
 	"os"
 	"path/filepath"
@@ -23,18 +22,12 @@ func MemFS() RequestHandler {
 
 // OpenFile should behave identically to os.OpenFile.
 func (fs *memFS) OpenFile(name string, flag int, perm os.FileMode) (FileHandle, error) {
-	if fs.mockErr != nil {
-		return nil, fs.mockErr
-	}
 	return nil, nil // TODO(samterainsights)
 }
 
 // Mkdir creates a new directory. An error should be returned if the specified
 // path already exists.
 func (fs *memFS) Mkdir(name string, attr *FileAttr) error {
-	if fs.mockErr != nil {
-		return fs.mockErr
-	}
 	return nil // TODO(samterainsights)
 }
 
@@ -43,85 +36,55 @@ func (fs *memFS) Mkdir(name string, attr *FileAttr) error {
 // io.Closer, its Close method will be called once the SFTP client is done
 // scanning.
 func (fs *memFS) OpenDir(name string) (DirReader, error) {
-	if fs.mockErr != nil {
-		return nil, fs.mockErr
-	}
 	return nil, nil // TODO(samterainsights)
 }
 
 // Rename renames the given path. An error should be returned if the path does
 // not exist or the new path already exists.
 func (fs *memFS) Rename(oldpath, newpath string) error {
-	if fs.mockErr != nil {
-		return fs.mockErr
-	}
 	return nil // TODO(samterainsights)
 }
 
 // Stat retrieves info about the given path, following symlinks.
 func (fs *memFS) Stat(name string) (os.FileInfo, error) {
-	if fs.mockErr != nil {
-		return nil, fs.mockErr
-	}
 	return nil, nil // TODO(samterainsights)
 }
 
 // Lstat retrieves info about the given path, and does not follow symlinks,
 // i.e. it can return information about symlinks themselves.
 func (fs *memFS) Lstat(name string) (os.FileInfo, error) {
-	if fs.mockErr != nil {
-		return nil, fs.mockErr
-	}
 	return nil, nil // TODO(samterainsights)
 }
 
 // Setstat set attributes for the given path.
 func (fs *memFS) Setstat(name string, attr *FileAttr) error {
-	if fs.mockErr != nil {
-		return fs.mockErr
-	}
 	return nil // TODO(samterainsights)
 }
 
 // Symlink creates a symlink with the given target.
 func (fs *memFS) Symlink(name, target string) error {
-	if fs.mockErr != nil {
-		return fs.mockErr
-	}
 	return nil // TODO(samterainsights)
 }
 
 // ReadLink returns the target path of the given symbolic link.
 func (fs *memFS) ReadLink(name string) (string, error) {
-	if fs.mockErr != nil {
-		return "", fs.mockErr
-	}
 	return "", nil // TODO(samterainsights)
 }
 
 // Rmdir removes the specified directory. An error should be returned if the
 // given path does not exists, is not a directory, or has children.
 func (fs *memFS) Rmdir(name string) error {
-	if fs.mockErr != nil {
-		return fs.mockErr
-	}
 	return nil // TODO(samterainsights)
 }
 
 // Remove removes the specified file. An error should be returned if the path
 // does not exist or it is a directory.
 func (fs *memFS) Remove(name string) error {
-	if fs.mockErr != nil {
-		return fs.mockErr
-	}
 	return nil // TODO(samterainsights)
 }
 
 // RealPath is responsible for producing an absolute path from a relative one.
 func (fs *memFS) RealPath(name string) (string, error) {
-	if fs.mockErr != nil {
-		return "", fs.mockErr
-	}
 	return "", nil // TODO(samterainsights)
 }
 
@@ -130,13 +93,6 @@ type memFS struct {
 	*memFile
 	files     map[string]*memFile
 	filesLock sync.Mutex
-	mockErr   error
-}
-
-// Set a mocked error that the next handler call will return.
-// Set to nil to reset for no error.
-func (fs *memFS) returnErr(err error) {
-	fs.mockErr = err
 }
 
 func (fs *memFS) fetch(path string) (*memFile, error) {
@@ -188,33 +144,31 @@ func (f *memFile) Sys() interface{} {
 	return nil
 }
 
-// Read/Write
 func (f *memFile) ReaderAt() (io.ReaderAt, error) {
-	if f.isdir {
-		return nil, os.ErrInvalid
-	}
-	return bytes.NewReader(f.content), nil
+	return f, nil
+}
+
+func (f *memFile) ReadAt(p []byte, off int64) (int, error) {
+	f.contentLock.RLock()
+	defer f.contentLock.RUnlock()
+	return copy(p, f.content[off:]), nil
 }
 
 func (f *memFile) WriterAt() (io.WriterAt, error) {
-	if f.isdir {
-		return nil, os.ErrInvalid
-	}
 	return f, nil
 }
 
 func (f *memFile) WriteAt(p []byte, off int64) (int, error) {
-	// fmt.Println(string(p), off)
-	// mimic write delays, should be optional
-	time.Sleep(time.Microsecond * time.Duration(len(p)))
 	f.contentLock.Lock()
 	defer f.contentLock.Unlock()
-	plen := len(p) + int(off)
-	if plen >= len(f.content) {
-		nc := make([]byte, plen)
+
+	minLen := len(p) + int(off)
+	if minLen >= len(f.content) {
+		nc := make([]byte, minLen)
 		copy(nc, f.content)
 		f.content = nc
 	}
 	copy(f.content[off:], p)
+
 	return len(p), nil
 }

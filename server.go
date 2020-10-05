@@ -106,14 +106,14 @@ type server struct {
 	openFilesMtx sync.RWMutex
 	openDirs     map[string]DirReader
 	openDirsMtx  sync.RWMutex
-	handleCtr    uint32
+	handleCtr    uint64
 }
 
 // Serve the SFTP protocol over a connection. Generally you will want to serve it on top
 // of an SSH "session" channel, however it could also be served over TLS, etc. Note that
 // SFTP has no security provisions so it should always be layered on top of a secure
 // connection.
-func Serve(transport io.ReadWriter, handler RequestHandler) (err error) {
+func Serve(transport io.ReadWriter, handler RequestHandler) error {
 	s := &server{
 		ReadWriter:     transport,
 		RequestHandler: handler,
@@ -141,15 +141,14 @@ func Serve(transport io.ReadWriter, handler RequestHandler) (err error) {
 	defer wg.Wait()
 	defer close(pktChan)
 
-	var pktType uint8
-	var pktBytes []byte
 	for {
-		if pktType, pktBytes, err = readPacket(transport); err != nil {
-			return
+		pktType, pktBytes, err := readPacket(transport)
+		if err != nil {
+			return errors.Wrap(err, "error reading packet from transport")
 		}
 
-		var pkt requestPacket
-		if pkt, err = makePacket(fxp(pktType), pktBytes); err != nil {
+		pkt, err := makePacket(fxp(pktType), pktBytes)
+		if err != nil {
 			switch errors.Cause(err) {
 			case errUnknownExtendedPacket:
 				if err := s.replyError(pkt, ErrOpUnsupported); err != nil {
@@ -361,8 +360,10 @@ func clamp(v, max uint32) uint32 {
 }
 
 func (s *server) nextHandle() string {
-	handle := atomic.AddUint32(&s.handleCtr, 1)
-	return strconv.FormatUint(uint64(handle), 36)
+	return strconv.FormatUint(
+		atomic.AddUint64(&s.handleCtr, 1),
+		36,
+	)
 }
 
 func (s *server) getFile(handle string) (FileHandle, error) {
